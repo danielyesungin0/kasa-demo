@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: "Fraunces", Georgia, serif;
+  --font-sans: "Inter Tight", system-ui, sans-serif;
+}
+
+html,
+body {
+  background-color: #fbf9f6;
+  color: #1a1715;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "ss01", "cv11";
+}
+
+button {
+  font-family: inherit;
+}
+
+/* Subtle focus ring for keyboard users. The outline naturally follows the
+   element's own border-radius — don't override it here, otherwise focused
+   inputs/buttons appear to "snap" to a different shape on focus. */
+:focus-visible {
+  outline: 2px solid #b85c3c;
+  outline-offset: 2px;
+}
+
+/* Smooth tap targets on mobile */
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Hide scrollbars on category chip rows but keep scroll */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-up {
+  animation: fade-up 0.4s ease-out both;
+}
+
+/* Disable horizontal scrolling globally — prevents accidental sideways
+   panning on mobile when an off-canvas element overflows. */
+html, body {
+  overflow-x: hidden;
+}
+
+/* Mobile chat shell utilities. The shell is a JS-positioned element that
+   tracks visualViewport — see <MobileChatShell> in app/shen/page.tsx. The
+   classes below are the supporting primitives.
+
+   Body scroll lock — applied via the `body-locked` class while the mobile
+   chat shell is mounted. Prevents iOS rubber-banding from pulling the
+   underlying page when the user scrolls the messages pane. */
+body.body-locked {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+/* Safe-area helpers — pad around the home indicator + notch on iPhone. */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+/* Touch scrolling momentum + contain so the messages pane scroll doesn't
+   bubble up into the body. */
+.scroll-pane {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
