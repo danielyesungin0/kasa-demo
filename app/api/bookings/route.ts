@@ -3,6 +3,7 @@ import { createServerSupabaseClient, createServiceRoleSupabaseClient } from "@/l
 import { isSameOrigin } from "@/lib/api/origin-check";
 import { ensureFreshSquareToken } from "@/lib/square/ensure-fresh-token";
 import { sendBookingConfirmation } from "@/lib/email";
+import { SQUARE_BASE } from "@/lib/square/config";
 
 export async function GET() {
   // Authenticated stylist only — this endpoint returns customer PII (names,
@@ -231,7 +232,7 @@ async function createSquareBooking(opts: SquareBookingOptions): Promise<string> 
 
   const idempotencyKey = `booking-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-  const res = await fetch("https://connect.squareupsandbox.com/v2/bookings", {
+  const res = await fetch(`${SQUARE_BASE}/v2/bookings`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -276,7 +277,7 @@ async function findOrCreateSquareCustomer(opts: {
   const { accessToken, clientName, clientPhone, clientEmail } = opts;
 
   // Search by phone first
-  const searchRes = await fetch("https://connect.squareupsandbox.com/v2/customers/search", {
+  const searchRes = await fetch(`${SQUARE_BASE}/v2/customers/search`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -303,7 +304,7 @@ async function findOrCreateSquareCustomer(opts: {
   const [givenName, ...rest] = clientName.trim().split(/\s+/);
   const familyName = rest.join(" ") || undefined;
 
-  const createRes = await fetch("https://connect.squareupsandbox.com/v2/customers", {
+  const createRes = await fetch(`${SQUARE_BASE}/v2/customers`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,

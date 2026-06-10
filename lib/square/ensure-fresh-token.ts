@@ -1,5 +1,6 @@
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/server";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
+import { SQUARE_BASE } from "@/lib/square/config";
 
 /**
  * Square OAuth tokens expire after 30 days. If we don't refresh them, every
@@ -13,7 +14,6 @@ import { decryptSecret, encryptSecret } from "@/lib/crypto";
  * behavior or surface a clear error.
  */
 
-const SQUARE_BASE = "https://connect.squareupsandbox.com";
 const REFRESH_THRESHOLD_MS = 48 * 60 * 60 * 1000; // 48 hours
 
 export type FreshTokenResult =

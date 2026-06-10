@@ -1,34 +1,28 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient, createServiceRoleSupabaseClient } from "@/lib/supabase/server";
 import { isSameOrigin } from "@/lib/api/origin-check";
+import { resolveStylist } from "@/lib/stylists/resolve";
 
 /**
- * GET — public-ish: returns the (single) stylist's display info for the
- * booking page. Anonymous callers can hit this because the booking page
- * is anonymous. We deliberately do NOT return email, phone, location_id,
- * tokens, or any other sensitive field.
+ * GET — public-ish: returns a provider's display info for the booking page.
+ * Anonymous callers can hit this because the booking page is anonymous. We
+ * deliberately do NOT return email, phone, location_id, tokens, or any other
+ * sensitive field.
+ *
+ * Resolves strictly by ?slug= when present; first-row fallback only on the
+ * legacy slug-less path. Also returns `published` so callers can gate.
  */
-export async function GET() {
-  const admin = createServiceRoleSupabaseClient();
+export async function GET(request: NextRequest) {
+  const slug = request.nextUrl.searchParams.get("slug");
 
-  const { data, error } = await admin
-    .from("stylists")
-    .select(
-      "display_name, square_business_name, square_location_name, square_team_member_name, email"
-    )
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .single();
-
-  if (error || !data) {
+  const data = await resolveStylist(slug);
+  if (!data) {
     return NextResponse.json({ error: "stylist_not_found" }, { status: 404 });
   }
 
   // Stylist-set display_name wins. If they haven't set one, fall through
   // to Square data; final fallback is the demo default "Shen" (NOT the email
   // prefix — emailing the world your email username is bad UX and PII).
-  // When a real stylist connects Square, the chain above resolves to their
-  // actual name and this default is never reached.
   const name =
     data.display_name ??
     data.square_team_member_name ??
@@ -40,7 +34,7 @@ export async function GET() {
       .filter(Boolean)
       .join(" · ") || null;
 
-  return NextResponse.json({ name, location });
+  return NextResponse.json({ name, location, published: data.published });
 }
 
 /**

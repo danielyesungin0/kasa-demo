@@ -3,8 +3,7 @@ import { createServiceRoleSupabaseClient } from "@/lib/supabase/server";
 import { isSameOrigin } from "@/lib/api/origin-check";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { ensureFreshSquareToken } from "@/lib/square/ensure-fresh-token";
-
-const SQUARE_BASE = "https://connect.squareupsandbox.com";
+import { SQUARE_BASE } from "@/lib/square/config";
 
 export async function POST(request: NextRequest) {
   if (!isSameOrigin(request)) {

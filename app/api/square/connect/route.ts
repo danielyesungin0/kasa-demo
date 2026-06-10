@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { SQUARE_BASE } from "@/lib/square/config";
 
 export async function GET() {
   // Read the auth user from the session — never trust a UID passed in the
@@ -14,7 +15,7 @@ export async function GET() {
     );
   }
 
-  const base = "https://connect.squareupsandbox.com/oauth2/authorize";
+  const base = `${SQUARE_BASE}/oauth2/authorize`;
   const params = new URLSearchParams({
     client_id: process.env.SQUARE_APPLICATION_ID!,
     response_type: "code",

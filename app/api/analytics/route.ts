@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/server";
+import { resolveStylist } from "@/lib/stylists/resolve";
 
 /**
  * Internal analytics ingestion. Accepts a single { event, props } payload
@@ -53,7 +54,7 @@ function sanitizeProps(input: unknown): Record<string, string | number | boolean
 }
 
 export async function POST(request: NextRequest) {
-  let body: { event?: string; props?: unknown };
+  let body: { event?: string; props?: unknown; slug?: string };
   try {
     body = await request.json();
   } catch {
@@ -68,14 +69,11 @@ export async function POST(request: NextRequest) {
   try {
     const admin = createServiceRoleSupabaseClient();
 
-    // Best-effort stylist attribution: use the first stylist row, same
-    // pattern as /api/bookings. Multi-tenancy will refactor this.
-    const { data: stylist } = await admin
-      .from("stylists")
-      .select("id")
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
+    // Best-effort stylist attribution: strict slug resolution when present,
+    // first-row fallback on the legacy slug-less path.
+    const stylist = await resolveStylist(
+      typeof body.slug === "string" ? body.slug : undefined
+    );
 
     await admin.from("analytics_events").insert({
       event,

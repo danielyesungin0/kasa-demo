@@ -1,6 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/server";
 import { decryptSecret } from "@/lib/crypto";
+import { SQUARE_BASE } from "@/lib/square/config";
+import { resolveStylist } from "@/lib/stylists/resolve";
 
 // Our canonical service IDs mapped to Square catalog item names (case-insensitive substring match)
 const SERVICE_NAME_MAP: Record<string, { nameHints: string[]; durationMinutes: number; category: string }> = {
@@ -32,28 +34,35 @@ type NormalizedService = {
 };
 
 export async function GET(request: NextRequest) {
-  const admin = createServiceRoleSupabaseClient();
+  const slug = request.nextUrl.searchParams.get("slug");
 
-  // Load stylist row — single-stylist beta, just take the first
-  const { data: stylist, error: stylistErr } = await admin
-    .from("stylists")
-    .select("id, square_access_token, service_catalog")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .single();
-
-  if (stylistErr || !stylist) {
+  // Resolve provider strictly by slug when present; first-row fallback on the
+  // legacy slug-less path. The shared resolver deliberately does NOT select
+  // secrets, so we read the encrypted token separately by id below.
+  const resolved = await resolveStylist(slug);
+  if (!resolved) {
     return NextResponse.json({ error: "stylist_not_found" }, { status: 404 });
   }
 
-  const accessToken = decryptSecret(stylist.square_access_token);
+  const admin = createServiceRoleSupabaseClient();
+  const { data: tokenRow, error: tokenErr } = await admin
+    .from("stylists")
+    .select("square_access_token, service_catalog")
+    .eq("id", resolved.id)
+    .single();
+
+  if (tokenErr || !tokenRow) {
+    return NextResponse.json({ error: "stylist_not_found" }, { status: 404 });
+  }
+
+  const accessToken = decryptSecret(tokenRow.square_access_token);
   if (!accessToken) {
     return NextResponse.json({ error: "square_not_connected" }, { status: 400 });
   }
 
   // Fetch catalog from Square sandbox
   const squareRes = await fetch(
-    "https://connect.squareupsandbox.com/v2/catalog/list?types=ITEM",
+    `${SQUARE_BASE}/v2/catalog/list?types=ITEM`,
     {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -139,7 +148,7 @@ export async function GET(request: NextRequest) {
   await admin
     .from("stylists")
     .update({ service_catalog: serviceCatalog })
-    .eq("id", stylist.id);
+    .eq("id", resolved.id);
 
   return NextResponse.json({ services: normalized, catalog: serviceCatalog });
 }

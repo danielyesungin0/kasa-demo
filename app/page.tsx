@@ -80,14 +80,11 @@ export default function HomePage() {
               href="/setup"
               className="rounded-full bg-ink-900 px-6 py-3.5 text-[15px] font-medium text-cream-50 transition hover:bg-ink-800 active:scale-[0.97] min-h-[48px] inline-flex items-center"
             >
-              Set up my booking link
+              Join the beta
             </Link>
-            <Link
-              href="/shen"
-              className="rounded-full border border-ink-200 bg-cream-50 px-6 py-3.5 text-[15px] font-medium text-ink-800 transition hover:border-ink-300 active:scale-[0.97] min-h-[48px] inline-flex items-center"
-            >
-              See client view
-            </Link>
+            {/* The "See client view" link to /shen was removed: the public
+                landing page must not expose a live provider's client chat.
+                Providers reach their own client link after onboarding. */}
           </div>
 
           <ul className="mt-12 grid gap-4 text-sm text-ink-600 sm:grid-cols-3">

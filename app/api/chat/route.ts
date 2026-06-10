@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { isSameOrigin } from "@/lib/api/origin-check";
 import { checkRateLimit } from "@/lib/api/rate-limit";
-import { createServiceRoleSupabaseClient } from "@/lib/supabase/server";
+import { resolveStylist } from "@/lib/stylists/resolve";
 import { SERVICES, STYLIST } from "@/lib/mock-data";
 import type { Service } from "@/lib/types";
 import { callAI, type AIResponse } from "@/lib/ai/provider";
@@ -36,6 +36,9 @@ import { detectUnsupportedService } from "@/lib/unsupported-services";
 type ChatRequest = {
   message?: string;
   conversation?: Array<{ role: "user" | "assistant"; content: string }>;
+  /** Provider slug. When present, resolves that provider strictly; when
+   *  absent (legacy /shen), falls back to the first stylist row. */
+  slug?: string;
 };
 
 type ChatResponseBody = {
@@ -166,7 +169,9 @@ export async function POST(request: NextRequest) {
     : [];
 
   // ── 1. Grounding facts ───────────────────────────────────────────────
-  const profile = await loadStylistProfile();
+  // Resolve the provider strictly by slug when one is sent; otherwise fall
+  // back to the first stylist row (legacy /shen path).
+  const profile = await loadStylistProfile(body.slug);
   const stylistName = profile.name;
 
   const faqCtx: FAQContext = {
@@ -454,24 +459,17 @@ const WORKING_DAYS_LABELS = ["Tuesday", "Wednesday", "Thursday", "Friday", "Satu
 
 /**
  * Pull stylist display name + business name + joined location from the DB.
- * Falls back to mock STYLIST if no row exists yet (dev / fresh setup).
+ * Resolves strictly by slug when one is provided; otherwise falls back to
+ * the first stylist row (legacy /shen path). Falls back to mock STYLIST if
+ * no row resolves (dev / fresh setup).
  */
-async function loadStylistProfile(): Promise<{
+async function loadStylistProfile(slug?: string): Promise<{
   name: string;
   businessName: string | null;
   location: string | null;
 }> {
   try {
-    const admin = createServiceRoleSupabaseClient();
-    const { data } = await admin
-      .from("stylists")
-      .select(
-        "display_name, square_business_name, square_location_name, square_team_member_name"
-      )
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-
+    const data = await resolveStylist(slug);
     if (!data) throw new Error("no stylist row");
 
     const name =

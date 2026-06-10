@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/server";
+import { resolveStylist } from "@/lib/stylists/resolve";
 import {
   generateSlots,
   type StylistAvailabilityRow,
@@ -26,25 +27,23 @@ const DURATION_FALLBACK: Record<string, number> = {
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const serviceId = searchParams.get("serviceId");
+  const slug = searchParams.get("slug");
   const weekShift = Math.max(0, parseInt(searchParams.get("weekShift") ?? "0", 10));
 
   if (!serviceId) {
     return NextResponse.json({ error: "serviceId required" }, { status: 400 });
   }
 
-  const admin = createServiceRoleSupabaseClient();
-
-  // Load stylist
-  const { data: stylist } = await admin
-    .from("stylists")
-    .select("id, service_catalog")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .single();
-
+  // Resolve provider strictly by slug when present; fall back to first row
+  // only on the legacy slug-less path.
+  const stylist = await resolveStylist(slug);
   if (!stylist) {
     return NextResponse.json({ error: "stylist_not_found" }, { status: 404 });
   }
+
+  // service_catalog is part of the resolved row; admin client is still used
+  // below for the stylist-scoped availability / blocked-time / booking reads.
+  const admin = createServiceRoleSupabaseClient();
 
   // Resolve duration from service_catalog, then fallback map
   const catalog = (stylist.service_catalog ?? {}) as Record<string, { durationMinutes?: number }>;

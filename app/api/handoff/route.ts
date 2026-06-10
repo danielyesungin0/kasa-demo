@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { isSameOrigin } from "@/lib/api/origin-check";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/server";
+import { resolveStylist } from "@/lib/stylists/resolve";
 
 /**
  * Handoff request submission.
@@ -21,6 +22,9 @@ type HandoffBody = {
   clientEmail?: string;
   summary?: string;
   sourceMessage?: string;
+  /** Provider slug. Strict resolution when present; first-row fallback on
+   *  the legacy slug-less path. */
+  slug?: string;
 };
 
 export async function POST(request: NextRequest) {
@@ -62,16 +66,9 @@ export async function POST(request: NextRequest) {
 
   const admin = createServiceRoleSupabaseClient();
 
-  // Stylist attribution — same "first stylist row" pattern as bookings and
-  // analytics. Multi-tenant refactor will replace this with a query param
-  // or stylist slug match.
-  const { data: stylist } = await admin
-    .from("stylists")
-    .select("id")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-
+  // Stylist attribution — strict slug resolution when a slug is sent;
+  // first-row fallback only on the legacy slug-less path.
+  const stylist = await resolveStylist(body.slug);
   if (!stylist) {
     return NextResponse.json({ error: "stylist_not_found" }, { status: 404 });
   }

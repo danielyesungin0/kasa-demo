@@ -1,8 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/server";
 import { encryptSecret } from "@/lib/crypto";
-
-const SQUARE_BASE = "https://connect.squareupsandbox.com";
+import { SQUARE_BASE } from "@/lib/square/config";
 
 /**
  * App URL for OAuth redirects. Prefers NEXT_PUBLIC_APP_URL, falls back to
