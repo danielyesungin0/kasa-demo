@@ -4,6 +4,7 @@ import { isSameOrigin } from "@/lib/api/origin-check";
 import { ensureFreshSquareToken } from "@/lib/square/ensure-fresh-token";
 import { sendBookingConfirmation } from "@/lib/email";
 import { SQUARE_BASE } from "@/lib/square/config";
+import { resolveStylist } from "@/lib/stylists/resolve";
 
 export async function GET() {
   // Authenticated stylist only — this endpoint returns customer PII (names,
@@ -49,6 +50,9 @@ type BookingRequest = {
   clientPhone: string;
   clientEmail?: string;
   notes?: string;
+  /** Provider slug. When present, the booking is attributed strictly to that
+   *  provider; when absent (legacy /shen), falls back to the first stylist. */
+  slug?: string;
 };
 
 export async function POST(request: NextRequest) {
@@ -77,14 +81,24 @@ export async function POST(request: NextRequest) {
 
   const admin = createServiceRoleSupabaseClient();
 
-  // Load stylist row
+  // Resolve the provider STRICTLY by slug when one is sent (every /book/[slug]
+  // booking includes it). Only the legacy slug-less /shen path falls back to
+  // the first stylist row. This guarantees /book/<provider> books into that
+  // provider — never into Shen via the old first-row default.
+  const resolved = await resolveStylist(body.slug);
+  if (!resolved) {
+    return NextResponse.json({ error: "stylist_not_found" }, { status: 404 });
+  }
+
+  // Fetch the secret + Square columns by id (the shared resolver deliberately
+  // doesn't select secrets). This is the same pattern used in
+  // app/api/square/services/route.ts.
   const { data: stylist } = await admin
     .from("stylists")
     .select(
       "id, display_name, square_team_member_name, square_business_name, square_access_token, square_location_id, square_team_member_id, service_catalog"
     )
-    .order("created_at", { ascending: true })
-    .limit(1)
+    .eq("id", resolved.id)
     .single();
 
   if (!stylist) {

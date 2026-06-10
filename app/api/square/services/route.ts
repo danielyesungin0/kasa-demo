@@ -84,6 +84,16 @@ export async function GET(request: NextRequest) {
   // Build normalized services by matching Square catalog items to our service IDs
   const serviceCatalog: Record<string, any> = {};
   const normalized: NormalizedService[] = [];
+  // Rows to upsert into provider_services (Pass 1 Square sync).
+  const providerServiceRows: Array<{
+    stylist_id: string;
+    square_item_id: string | null;
+    square_variation_id: string;
+    name: string;
+    category: string | null;
+    price_cents: number | null;
+    duration_minutes: number | null;
+  }> = [];
 
   for (const [svcId, svcMeta] of Object.entries(SERVICE_NAME_MAP)) {
     let squareCatalogItemId: string | null = null;
@@ -141,6 +151,26 @@ export async function GET(request: NextRequest) {
         durationMinutes: svcMeta.durationMinutes,
         priceCents,
       };
+
+      // Collect a provider_services upsert row. Only services with a Square
+      // variation id are upserted — that id is the dedup key. Provider-edited
+      // columns (visible_in_chat, behavior, aliases, chat_description) are
+      // intentionally OMITTED so a re-sync never overwrites them; Postgres
+      // only updates the columns present in the payload on conflict.
+      //
+      // NOTE (Pass 1 limitation): discovery is still gated by the hardcoded
+      // SERVICE_NAME_MAP above, so only services whose Square names match
+      // those hints are captured. Generic catalog discovery is a later phase;
+      // this still lands real rows for Shen so Pass 2 chat grounding has data.
+      providerServiceRows.push({
+        stylist_id: resolved.id,
+        square_item_id: squareCatalogItemId,
+        square_variation_id: squareVariationId,
+        name: foundName,
+        category: svcMeta.category,
+        price_cents: priceCents,
+        duration_minutes: svcMeta.durationMinutes,
+      });
     }
   }
 
@@ -149,6 +179,21 @@ export async function GET(request: NextRequest) {
     .from("stylists")
     .update({ service_catalog: serviceCatalog })
     .eq("id", resolved.id);
+
+  // Upsert synced services into provider_services. Dedup on
+  // (stylist_id, square_variation_id) — requires the unique index from
+  // migration 003_provider_services_sync.sql. Non-fatal: a failure here
+  // doesn't break the existing service_catalog response.
+  if (providerServiceRows.length > 0) {
+    const { error: upsertErr } = await admin
+      .from("provider_services")
+      .upsert(providerServiceRows, {
+        onConflict: "stylist_id,square_variation_id",
+      });
+    if (upsertErr) {
+      console.error("provider_services upsert failed:", upsertErr);
+    }
+  }
 
   return NextResponse.json({ services: normalized, catalog: serviceCatalog });
 }

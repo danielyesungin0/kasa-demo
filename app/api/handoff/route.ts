@@ -3,6 +3,7 @@ import { isSameOrigin } from "@/lib/api/origin-check";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/server";
 import { resolveStylist } from "@/lib/stylists/resolve";
+import { sendHandoffNotification } from "@/lib/email";
 
 /**
  * Handoff request submission.
@@ -90,6 +91,40 @@ export async function POST(request: NextRequest) {
   if (insertErr || !inserted) {
     console.error("handoff insert failed:", insertErr);
     return NextResponse.json({ error: "save_failed" }, { status: 500 });
+  }
+
+  // ── Email notification (best-effort, AFTER the row is durably saved) ──────
+  // If the stylist enabled handoff email and set an address, notify them.
+  // Any failure here is swallowed: the handoff is already recorded and the
+  // client already gets a success response below, regardless of email.
+  try {
+    const { data: settings } = await admin
+      .from("stylists")
+      .select(
+        "handoff_email, handoff_email_enabled, display_name, square_team_member_name, square_business_name"
+      )
+      .eq("id", stylist.id)
+      .single();
+
+    if (settings?.handoff_email_enabled && settings.handoff_email) {
+      const stylistName =
+        settings.display_name ??
+        settings.square_team_member_name ??
+        settings.square_business_name ??
+        "your stylist";
+      await sendHandoffNotification({
+        to: settings.handoff_email,
+        stylistName,
+        clientName,
+        clientPhone,
+        clientEmail,
+        summary,
+        sourceMessage,
+      });
+    }
+  } catch (err) {
+    // Never let an email problem fail a saved handoff.
+    console.error("handoff email notification failed:", err);
   }
 
   return NextResponse.json({ id: inserted.id, status: "received" });

@@ -3815,6 +3815,9 @@ export function ClientBookingPage({ slug }: { slug?: string } = {}) {
                     clientPhone: info.phone,
                     clientEmail: info.email || undefined,
                     notes: info.notes || undefined,
+                    // Attribute the booking to this provider. Absent on the
+                    // legacy /shen path (first-row fallback server-side).
+                    slug: slug ?? undefined,
                   }),
                 });
                 if (!res.ok) {
