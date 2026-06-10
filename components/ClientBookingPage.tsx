@@ -1036,6 +1036,28 @@ export function ClientBookingPage({ slug }: { slug?: string } = {}) {
         });
         return;
       }
+
+      // Multi-person guard. The beta does not book more than one person
+      // directly (it needs back-to-back slots or multiple staff/resources
+      // we can't yet guarantee). Without this, "Can my mom and I both get
+      // haircuts?" would be tagged as a normal Haircut booking by the
+      // deterministic parser below and book a single slot. Route to a
+      // handoff so ${stylist} can confirm timing for the group.
+      if (detectMultiPerson(trimmed)) {
+        const summary = `Client wants to book for more than one person. ${sName()} should confirm timing (back-to-back slots or multiple appointments). Most recent message: "${trimmed}".`;
+        pushTurn({
+          kind: "bot-text",
+          id: `t-multi-${Date.now()}`,
+          text: `This sounds like a booking for more than one person. I can send ${sName()} a message to confirm timing for everyone.`,
+        });
+        pushTurn({
+          kind: "handoff",
+          id: `t-multi-handoff-${Date.now()}`,
+          summary,
+          sourceMessage: trimmed,
+        });
+        return;
+      }
     }
 
     // Architecture B routing.
@@ -3353,6 +3375,15 @@ export function ClientBookingPage({ slug }: { slug?: string } = {}) {
       return;
     }
 
+    // Multi-person guard (same reasoning): "my mom and I both want haircuts"
+    // typed at the entry screen would otherwise become an inline single-cut
+    // recommendation. Drop into chat so handleTextSubmit routes it to a
+    // handoff instead of booking one slot.
+    if (detectMultiPerson(trimmed)) {
+      openAssistant(trimmed);
+      return;
+    }
+
     track("assistant_opened", { source: "intent-input" });
     try {
       const intent = parseClientMessage(trimmed, EMPTY_CONTEXT);
@@ -3921,6 +3952,54 @@ function hintsHaveSignal(h: TimeHints): boolean {
     h.weekShift !== null ||
     h.prefersSoonest
   );
+}
+
+/**
+ * Deterministic multi-person detector. Returns true when the message is
+ * clearly a booking for MORE THAN ONE person, which the beta does not
+ * support booking directly (it requires back-to-back slots or multiple
+ * staff/resources we can't yet guarantee). These route to a handoff.
+ *
+ * Runs BEFORE the confident-book path so "Can my mom and I both get
+ * haircuts?" — which the deterministic parser would otherwise tag as a
+ * normal Haircut booking — is intercepted.
+ *
+ * CRITICAL distinction:
+ *   - "my mom and I", "me and my friend", "both of us", "two of us",
+ *     "we both", "for me and my mom" → multi-person (TRUE).
+ *   - "my mom needs a haircut", "my daughter wants color" → ONE person
+ *     (the other person), NOT multi-person (FALSE). We must not over-fire
+ *     on a single third-party booking.
+ */
+function detectMultiPerson(text: string): boolean {
+  const t = ` ${text.toLowerCase()} `;
+
+  // Explicit "two people" phrasings.
+  if (/\b(two|2|three|3|four|4)\s+(of\s+us|people|appointments?|cuts?|spots?|slots?)\b/.test(t)) {
+    return true;
+  }
+  // "both" used about people: "both of us", "we both", "can we both",
+  // "both get / both need / both want".
+  if (/\bboth\s+(of\s+us|get|need|want|come|book)\b/.test(t)) return true;
+  if (/\bwe\s+both\b/.test(t)) return true;
+  // "can we both come in", "can we come in", "for both of us"
+  if (/\bcan\s+we\b/.test(t) || /\bfor\s+both\b/.test(t)) return true;
+
+  // "X and I" / "me and X" / "X and me" — the speaker PLUS someone else.
+  // Require a companion noun/pronoun so we don't catch unrelated "and I".
+  const companion =
+    "(mom|mother|dad|father|friend|sister|brother|daughter|son|wife|husband|partner|girlfriend|boyfriend|kid|kids|child|children|family|cousin|aunt|uncle|roommate|coworker|colleague|someone|somebody)";
+  if (
+    new RegExp(`\\bme\\s+and\\s+(my\\s+)?${companion}\\b`).test(t) ||
+    new RegExp(`\\b${companion}\\s+and\\s+(i|me)\\b`).test(t) ||
+    new RegExp(`\\bmy\\s+${companion}\\s+and\\s+(i|me)\\b`).test(t) ||
+    // "for me and my mom", "book for me and ..."
+    new RegExp(`\\bfor\\s+me\\s+and\\b`).test(t)
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 /**
