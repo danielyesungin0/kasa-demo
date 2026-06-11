@@ -114,7 +114,10 @@ function SetupPageInner() {
     const redirectBase = window.location.origin;
     await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${redirectBase}/setup` },
+      // Point at the PKCE callback route, which exchanges the code for a
+      // session cookie, then forwards to /setup. Linking straight to /setup
+      // skipped the exchange and left the user without a session.
+      options: { emailRedirectTo: `${redirectBase}/auth/callback?next=/setup` },
     });
     setSending(false);
     setSent(true);
