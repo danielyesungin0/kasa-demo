@@ -10,6 +10,10 @@ import {
   type FAQContext,
 } from "@/lib/ai/deterministic-faq";
 import { detectUnsupportedService } from "@/lib/unsupported-services";
+import {
+  getProviderServices,
+  getProviderUnsupportedTerms,
+} from "@/lib/provider-services";
 
 /**
  * Ask Shen chat endpoint — AI-first conversational layer, deterministic
@@ -170,9 +174,56 @@ export async function POST(request: NextRequest) {
 
   // ── 1. Grounding facts ───────────────────────────────────────────────
   // Resolve the provider strictly by slug when one is sent; otherwise fall
-  // back to the first stylist row (legacy /shen path).
+  // back to the first stylist row (legacy /shen path). One resolve, reused
+  // for the profile, provider services, and unsupported rules below.
+  const resolvedStylist = await resolveStylist(body.slug);
   const profile = await loadStylistProfile(body.slug);
   const stylistName = profile.name;
+
+  // Provider-aware service grounding (Pass 2A). If the provider has synced
+  // services in provider_services, ground the AI on those (real names,
+  // prices, durations, aliases). Otherwise fall back to the mock demo
+  // catalog so /book/shen keeps working before Square is synced.
+  const providerServices = resolvedStylist
+    ? await getProviderServices(resolvedStylist.id)
+    : [];
+  const providerUnsupportedTerms = resolvedStylist
+    ? await getProviderUnsupportedTerms(resolvedStylist.id)
+    : [];
+
+  // Build the grounding service list the AI sees. Provider rows win when
+  // present; aliases are appended to each name so the model matches broad
+  // terms like "treatment". Falls back to the mock SERVICES shape.
+  const groundingServices =
+    providerServices.length > 0
+      ? providerServices
+          .filter((s) => s.visible_in_chat)
+          .map((s) => ({
+            id: s.id,
+            name:
+              s.aliases.length > 0
+                ? `${s.name} (also: ${s.aliases.join(", ")})`
+                : s.name,
+            category: s.category ?? "Other",
+            priceLabel:
+              s.price_cents != null
+                ? `$${Math.round(s.price_cents / 100)}`
+                : "Price varies",
+            durationLabel:
+              s.duration_minutes != null ? `${s.duration_minutes} min` : "—",
+            status:
+              s.behavior === "consultation"
+                ? ("consultation" as const)
+                : ("online" as const),
+          }))
+      : SERVICES.map((s) => ({
+          id: s.id,
+          name: s.name,
+          category: s.category,
+          priceLabel: s.priceLabel,
+          durationLabel: s.durationLabel,
+          status: s.status,
+        }));
 
   const faqCtx: FAQContext = {
     stylistName,
@@ -209,14 +260,7 @@ export async function POST(request: NextRequest) {
       studioName: profile.businessName,
       location: profile.location,
       workingDays: WORKING_DAYS_LABELS,
-      services: SERVICES.map((s) => ({
-        id: s.id,
-        name: s.name,
-        category: s.category,
-        priceLabel: s.priceLabel,
-        durationLabel: s.durationLabel,
-        status: s.status,
-      })),
+      services: groundingServices,
       conversation,
       userMessage: message,
     },
@@ -265,7 +309,7 @@ export async function POST(request: NextRequest) {
     // do bleach). When the user's message contains an unambiguous
     // unsupported-service keyword, override the AI's intent so the chat
     // routes to handoff regardless of what the model returned.
-    const detectedUnsupported = detectUnsupportedService(message);
+    const detectedUnsupported = detectUnsupportedService(message, providerUnsupportedTerms);
     const isHardUnsupported = detectedUnsupported !== null;
 
     let effectiveIntent: AIResponse["intent"];
@@ -331,7 +375,7 @@ export async function POST(request: NextRequest) {
   // user to a handoff rather than the generic prompt. Otherwise "bleach
   // my hair" with AI down would dead-end at "tell me what you're looking
   // for", which is worse than offering to message the stylist.
-  const offlineUnsupported = detectUnsupportedService(message);
+  const offlineUnsupported = detectUnsupportedService(message, providerUnsupportedTerms);
   if (offlineUnsupported) {
     const responseBody: ChatResponseBody = {
       reply: `That isn't something ${stylistName} currently offers — I don't want to point you at the wrong service. Want me to send ${stylistName} a quick message so she can let you know directly?`,

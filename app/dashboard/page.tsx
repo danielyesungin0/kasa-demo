@@ -105,6 +105,9 @@ export default function DashboardPage() {
 
   const headerRight = (
     <nav className="flex items-center gap-1 text-sm">
+      <Link href="/dashboard/services" className="inline-flex min-h-[40px] items-center rounded-full px-3.5 py-2 text-sm text-ink-700 hover:bg-cream-100">
+        Settings
+      </Link>
       <a href="/shen" className="inline-flex min-h-[40px] items-center rounded-full bg-cream-100 px-3.5 py-2 text-sm text-ink-700 hover:bg-cream-200">
         Preview ↗
       </a>

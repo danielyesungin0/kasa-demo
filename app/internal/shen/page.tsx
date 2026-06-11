@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
 import { ClientBookingPage } from "@/components/ClientBookingPage";
+import { getStylistBySlug } from "@/lib/stylists/resolve";
+import { getProviderUnsupportedTerms } from "@/lib/provider-services";
 
 /**
  * Private internal testing route for the Shen demo.
@@ -14,9 +16,15 @@ import { ClientBookingPage } from "@/components/ClientBookingPage";
  * Renders the same client booking surface as /book/shen, pinned to the
  * "shen" slug, so chat/availability/handoff all resolve Shen's data.
  */
-export default function InternalShenPage() {
+export default async function InternalShenPage() {
   if (process.env.INTERNAL_DEMO_ENABLED !== "true") {
     notFound();
   }
-  return <ClientBookingPage slug="shen" />;
+  // Resolve Shen's row to load her provider-configured unsupported terms,
+  // mirroring /book/[slug]. Falls back to [] (global list) if not found.
+  const stylist = await getStylistBySlug("shen");
+  const unsupportedTerms = stylist
+    ? await getProviderUnsupportedTerms(stylist.id)
+    : [];
+  return <ClientBookingPage slug="shen" unsupportedTerms={unsupportedTerms} />;
 }

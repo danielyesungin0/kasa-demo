@@ -1,4 +1,5 @@
 import { getStylistBySlug } from "@/lib/stylists/resolve";
+import { getProviderUnsupportedTerms } from "@/lib/provider-services";
 import { ClientBookingPage } from "@/components/ClientBookingPage";
 import { PageShell } from "@/components/PageShell";
 
@@ -27,7 +28,14 @@ export default async function BookBySlugPage({
     return <NotAvailable />;
   }
 
-  return <ClientBookingPage slug={params.slug} />;
+  // Provider-configured unsupported terms (Pass 2A). Passed to the client so
+  // its synchronous unsupported check is provider-aware without an async
+  // refactor. Empty array → client falls back to the global list.
+  const unsupportedTerms = await getProviderUnsupportedTerms(stylist.id);
+
+  return (
+    <ClientBookingPage slug={params.slug} unsupportedTerms={unsupportedTerms} />
+  );
 }
 
 function NotAvailable() {

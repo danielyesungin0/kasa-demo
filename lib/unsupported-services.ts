@@ -59,8 +59,41 @@ const UNSUPPORTED_TERMS: { re: RegExp; label: string }[] = [
   { re: /\bscalp\s+(tattoo|micropigmentation|smp)\b|\bhair\s+transplant\b|\bhair\s+loss\s+treatment\b/, label: "scalp / hair loss treatment" },
 ];
 
-export function detectUnsupportedService(message: string): string | null {
+/**
+ * Detect whether a message names an unsupported service.
+ *
+ * AUGMENT model (Pass 2A): provider-configured terms are checked FIRST, then
+ * the global hardcoded list as a fallback for terms the provider hasn't
+ * configured. So Shen's DB rule for "bleach" fires from her own config, while
+ * she still keeps global protection against extensions/nails/etc. she never
+ * explicitly ruled on.
+ *
+ * - `message`        the client's text
+ * - `providerTerms`  lowercased trigger terms from the provider's
+ *                    unsupported_rules (optional). Matched as whole-word-ish
+ *                    substrings so "bleach" catches "can you bleach my hair".
+ *
+ * Returns the matched term/label, or null.
+ */
+export function detectUnsupportedService(
+  message: string,
+  providerTerms?: string[]
+): string | null {
   const t = ` ${message.toLowerCase()} `;
+
+  // 1. Provider-configured terms win.
+  if (providerTerms && providerTerms.length > 0) {
+    for (const term of providerTerms) {
+      const cleaned = term.trim().toLowerCase();
+      if (!cleaned) continue;
+      // Word-boundary-ish match so "bleach" matches "bleach my hair" and
+      // "bleaching" but not unrelated substrings. Escape regex metachars.
+      const escaped = cleaned.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      if (new RegExp(`\\b${escaped}`).test(t)) return cleaned;
+    }
+  }
+
+  // 2. Global fallback list.
   for (const { re, label } of UNSUPPORTED_TERMS) {
     if (re.test(t)) return label;
   }

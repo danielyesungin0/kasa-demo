@@ -374,7 +374,10 @@ async function fetchSlotsForService(
  * /api/chat, /api/availability, /api/handoff) as a query param. No UI/UX
  * change — this is purely about *which provider's* data the page reads.
  */
-export function ClientBookingPage({ slug }: { slug?: string } = {}) {
+export function ClientBookingPage({
+  slug,
+  unsupportedTerms,
+}: { slug?: string; unsupportedTerms?: string[] } = {}) {
   // Query-string suffix appended to provider-scoped API calls. Empty string
   // when no slug (legacy path), so existing fetches are byte-for-byte the
   // same as before.
@@ -1020,7 +1023,7 @@ export function ClientBookingPage({ slug }: { slug?: string } = {}) {
       // Skipped during a pending Switch/Fuzzy/Clarification dialog so
       // mid-flow text like "no, just a trim" isn't mistakenly parsed as
       // a fresh booking request.
-      const unsupported = detectUnsupportedService(trimmed);
+      const unsupported = detectUnsupportedService(trimmed, unsupportedTerms);
       if (unsupported) {
         const summary = `Client asked about "${unsupported}", which isn't in ${sName()}'s current service list. Most recent message: "${trimmed}".`;
         pushTurn({
@@ -3370,7 +3373,7 @@ export function ClientBookingPage({ slug }: { slug?: string } = {}) {
     // card for Full Color — a service the stylist doesn't actually offer.
     // Drop into the chat with the message so handleTextSubmit's matching
     // unsupported guard can render the handoff turn.
-    if (detectUnsupportedService(trimmed)) {
+    if (detectUnsupportedService(trimmed, unsupportedTerms)) {
       openAssistant(trimmed);
       return;
     }
