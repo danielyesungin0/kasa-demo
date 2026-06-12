@@ -377,11 +377,24 @@ async function fetchSlotsForService(
 export function ClientBookingPage({
   slug,
   unsupportedTerms,
-}: { slug?: string; unsupportedTerms?: string[] } = {}) {
+  syncedServices,
+}: {
+  slug?: string;
+  unsupportedTerms?: string[];
+  syncedServices?: Service[];
+} = {}) {
   // Query-string suffix appended to provider-scoped API calls. Empty string
   // when no slug (legacy path), so existing fetches are byte-for-byte the
   // same as before.
   const slugQS = slug ? `slug=${encodeURIComponent(slug)}` : "";
+
+  // Effective catalog for RENDERING tappable service cards / browse views.
+  // Synced provider services when available (cards carry svc-* ids that book
+  // through the existing flow), else the mock SERVICES — preserving demo and
+  // no-Square behavior. NOTE: this is for rendering only; parse-intent.ts and
+  // the booking routes are untouched and still resolve via service_catalog.
+  const effectiveCatalog: Service[] =
+    syncedServices && syncedServices.length > 0 ? syncedServices : SERVICES;
 
   const [stage, setStage] = useState<Stage>("home");
 
@@ -933,9 +946,32 @@ export function ClientBookingPage({
 
   /* ---------------------- Prompt chip / text submit ------------ */
 
+  // Resolve AI-recommended service ids to services in the effective catalog.
+  // The AI grounds on provider_services (whose ids match effectiveCatalog when
+  // synced), so this lines up. Unmatched ids are dropped so a card never
+  // carries an unbookable id. Deduped by id.
+  function matchEffectiveServices(ids: string[] | undefined): Service[] {
+    if (!ids || ids.length === 0) return [];
+    const seen = new Set<string>();
+    const out: Service[] = [];
+    for (const id of ids) {
+      if (seen.has(id)) continue;
+      const svc = effectiveCatalog.find((s) => s.id === id);
+      if (svc && svc.status !== "hidden") {
+        seen.add(id);
+        out.push(svc);
+      }
+    }
+    return out;
+  }
+
   function buildBrowserGroups(filterCategory?: string) {
+    // Render from the effective catalog (synced provider services when
+    // available, else mock) so browse/category cards reflect the provider's
+    // real Square services. Cards carry svc-* ids that book through the
+    // existing flow.
     return Array.from(
-      SERVICES.reduce((map, svc) => {
+      effectiveCatalog.reduce((map, svc) => {
         if (svc.status === "hidden") return map;
         if (filterCategory && svc.category !== filterCategory) return map;
         const arr = map.get(svc.category) ?? [];
@@ -1155,6 +1191,44 @@ export function ClientBookingPage({
       if (isHandoffPath) {
         renderChatResponse(aiResponse, trimmed);
         return;
+      }
+
+      // Category / multi-match GUIDANCE → tappable cards. When the AI is
+      // browsing (service_guidance) and points at 2+ services, show the
+      // matching services as a tappable service-browser turn (sourced from
+      // the effective catalog) so the client can tap → book directly,
+      // instead of a text-only "which one?" they'd have to retype.
+      if (aiResponse.intent === "service_guidance") {
+        const matched = matchEffectiveServices(
+          aiResponse.recommendedServiceIds
+        );
+        if (matched.length > 1) {
+          const reply = aiResponse.reply.trim();
+          if (reply) {
+            pushTurn({
+              kind: "bot-text",
+              id: `t-ai-${Date.now()}`,
+              text: reply,
+              source: aiResponse.source,
+            });
+          }
+          // Group the matched services by category for the browser turn.
+          const groups = Array.from(
+            matched.reduce((map, svc) => {
+              const arr = map.get(svc.category) ?? [];
+              arr.push(svc);
+              map.set(svc.category, arr);
+              return map;
+            }, new Map<string, Service[]>())
+          ).map(([category, services]) => ({ category, services }));
+          pushTurn({
+            kind: "service-browser",
+            id: `t-cat-browser-${Date.now()}`,
+            groups,
+          });
+          setChipsLocked(true);
+          return;
+        }
       }
 
       const converted = aiEnvelopeToIntent(
@@ -2410,6 +2484,21 @@ export function ClientBookingPage({
       text: reply,
       source: response.source,
     });
+
+    // The server "fallback" reply mentions "Browse all services" — back it
+    // with a REAL tappable browser turn so the CTA isn't dead copy.
+    if (response.source === "fallback") {
+      const groups = buildBrowserGroups();
+      if (groups.length > 0) {
+        pushTurn({
+          kind: "service-browser",
+          id: `t-fallback-browser-${Date.now()}`,
+          groups,
+        });
+        setChipsLocked(true);
+      }
+      return true;
+    }
 
     // Track consecutive low-confidence unknown turns. Hard rule:
     //   - low confidence (< 0.6) and intent unknown → bump counter

@@ -87,6 +87,7 @@ export async function GET(request: NextRequest) {
   // Rows to upsert into provider_services (Pass 1 Square sync).
   const providerServiceRows: Array<{
     stylist_id: string;
+    service_key: string;
     square_item_id: string | null;
     square_variation_id: string;
     name: string;
@@ -164,6 +165,10 @@ export async function GET(request: NextRequest) {
       // this still lands real rows for Shen so Pass 2 chat grounding has data.
       providerServiceRows.push({
         stylist_id: resolved.id,
+        // svc-* id — matches the service_catalog keys that /api/availability
+        // and /api/bookings look up, so a card carrying this key books cleanly
+        // through the existing flow (never the row UUID).
+        service_key: svcId,
         square_item_id: squareCatalogItemId,
         square_variation_id: squareVariationId,
         name: foundName,

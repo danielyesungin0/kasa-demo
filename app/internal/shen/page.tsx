@@ -1,7 +1,10 @@
 import { notFound } from "next/navigation";
 import { ClientBookingPage } from "@/components/ClientBookingPage";
 import { getStylistBySlug } from "@/lib/stylists/resolve";
-import { getProviderUnsupportedTerms } from "@/lib/provider-services";
+import {
+  getProviderUnsupportedTerms,
+  getProviderServicesAsServiceType,
+} from "@/lib/provider-services";
 
 /**
  * Private internal testing route for the Shen demo.
@@ -26,5 +29,14 @@ export default async function InternalShenPage() {
   const unsupportedTerms = stylist
     ? await getProviderUnsupportedTerms(stylist.id)
     : [];
-  return <ClientBookingPage slug="shen" unsupportedTerms={unsupportedTerms} />;
+  const syncedServices = stylist
+    ? await getProviderServicesAsServiceType(stylist.id)
+    : [];
+  return (
+    <ClientBookingPage
+      slug="shen"
+      unsupportedTerms={unsupportedTerms}
+      syncedServices={syncedServices}
+    />
+  );
 }

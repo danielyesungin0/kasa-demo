@@ -1,5 +1,8 @@
 import { getStylistBySlug } from "@/lib/stylists/resolve";
-import { getProviderUnsupportedTerms } from "@/lib/provider-services";
+import {
+  getProviderUnsupportedTerms,
+  getProviderServicesAsServiceType,
+} from "@/lib/provider-services";
 import { ClientBookingPage } from "@/components/ClientBookingPage";
 import { PageShell } from "@/components/PageShell";
 
@@ -33,8 +36,16 @@ export default async function BookBySlugPage({
   // refactor. Empty array → client falls back to the global list.
   const unsupportedTerms = await getProviderUnsupportedTerms(stylist.id);
 
+  // Synced services for tappable cards. Empty → client falls back to the mock
+  // catalog. Cards carry svc-* ids so they book through the existing flow.
+  const syncedServices = await getProviderServicesAsServiceType(stylist.id);
+
   return (
-    <ClientBookingPage slug={params.slug} unsupportedTerms={unsupportedTerms} />
+    <ClientBookingPage
+      slug={params.slug}
+      unsupportedTerms={unsupportedTerms}
+      syncedServices={syncedServices}
+    />
   );
 }
 

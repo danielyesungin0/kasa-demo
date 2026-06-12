@@ -1,4 +1,5 @@
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/server";
+import type { Service, ServiceCategory } from "@/lib/types";
 
 /**
  * Server-side reads for per-provider chat configuration (Pass 2A).
@@ -7,6 +8,25 @@ import { createServiceRoleSupabaseClient } from "@/lib/supabase/server";
  * callers can cleanly fall back to the demo/mock catalog. This is the
  * safety net that keeps /book/shen working before Square is synced.
  */
+
+const SERVICE_CATEGORIES: ServiceCategory[] = [
+  "Haircut",
+  "Treatment",
+  "Perm",
+  "Color",
+  "Manicure",
+  "Pedicure",
+  "Other",
+];
+
+function formatDurationLabel(minutes: number | null): string {
+  if (minutes == null) return "—";
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${m} min`;
+  if (m === 0) return `${h} hr`;
+  return `${h} hr ${m} min`;
+}
 
 export type ProviderServiceRow = {
   id: string;
@@ -76,4 +96,69 @@ export async function getProviderUnsupportedTerms(
 ): Promise<string[]> {
   const rules = await getProviderUnsupportedRules(stylistId);
   return rules.map((r) => r.trigger_term.toLowerCase()).filter(Boolean);
+}
+
+/**
+ * Synced provider services mapped to the client's `Service` shape, for
+ * rendering tappable service cards.
+ *
+ * CRITICAL: `Service.id` is set from `service_key` (svc-*), NOT the row's
+ * UUID. That svc-* id is what /api/availability and /api/bookings look up in
+ * service_catalog, so a card carrying it books cleanly through the existing
+ * flow. Rows with a null/blank service_key (legacy, pre-migration-006, or
+ * unmatched) are SKIPPED so a card can never carry an unbookable id —
+ * the client falls back to the mock catalog for those.
+ *
+ * Returns [] when the provider has no usable rows; caller falls back to mock.
+ */
+export async function getProviderServicesAsServiceType(
+  stylistId: string
+): Promise<Service[]> {
+  try {
+    const admin = createServiceRoleSupabaseClient();
+    const { data, error } = await admin
+      .from("provider_services")
+      .select(
+        "service_key, name, category, price_cents, duration_minutes, visible_in_chat, behavior"
+      )
+      .eq("stylist_id", stylistId)
+      .neq("behavior", "hidden")
+      .eq("visible_in_chat", true);
+    if (error || !data) return [];
+
+    const out: Service[] = [];
+    for (const row of data as Array<{
+      service_key: string | null;
+      name: string;
+      category: string | null;
+      price_cents: number | null;
+      duration_minutes: number | null;
+      behavior: string;
+    }>) {
+      // No svc-* key → can't be booked through the existing flow → skip.
+      if (!row.service_key) continue;
+
+      const category: ServiceCategory = SERVICE_CATEGORIES.includes(
+        row.category as ServiceCategory
+      )
+        ? (row.category as ServiceCategory)
+        : "Other";
+
+      out.push({
+        id: row.service_key,
+        name: row.name,
+        category,
+        priceLabel:
+          row.price_cents != null
+            ? `$${Math.round(row.price_cents / 100)}`
+            : "Price varies",
+        durationMinutes: row.duration_minutes ?? 60,
+        durationLabel: formatDurationLabel(row.duration_minutes),
+        status: row.behavior === "consultation" ? "consultation" : "online",
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
 }
