@@ -4342,7 +4342,20 @@ function aiEnvelopeToIntent(
     return null;
   }
 
-  // Booking / service guidance — both reduce to a `book` intent that the
+  // Multi-service GUIDANCE (browsing, not committing) — e.g. a category
+  // question like "do you offer treatment?" where several distinct services
+  // match (Head Spa, Keratin, Milbon). Return null so the caller renders the
+  // AI's enumerated reply ("we offer X, Y, Z — which one?") instead of
+  // collapsing to a single deterministic booking and losing the list.
+  // A direct "booking" intent (a commitment) still converts below.
+  if (
+    env.intent === "service_guidance" &&
+    (env.recommendedServiceIds?.length ?? 0) > 1
+  ) {
+    return null;
+  }
+
+  // Booking / single-service guidance — reduce to a `book` intent that the
   // existing handleBookOrSwitch flow turns into a recommendation + time
   // selection. service_guidance with no tags falls through to unknown so
   // the chat asks a follow-up rather than guessing.

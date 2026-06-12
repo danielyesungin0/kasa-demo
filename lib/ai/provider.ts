@@ -459,12 +459,20 @@ You MUST respond with valid JSON only, matching this exact schema:
 }
 
 Intent guide:
-- "faq": simple factual answer (location, hours, "do you offer X", price/duration of a specific service). Set questionType.
-- "service_guidance": user is shopping for a service but hasn't committed; recommend from the list.
+- "faq": simple factual answer (location, hours, price/duration of ONE specific named service). Set questionType.
+- "service_guidance": user is shopping for a service, OR asks about a category/broad term ("do you offer treatment?", "what colors do you do?", "any perms?"). Recommend / enumerate from the list.
 - "booking": user wants to book something specific — pick the matching service id(s).
 - "handoff": multi-person, "for me and my mom", custom requests, scheduling within another appointment, multiple unrelated questions, anything that needs ${stylist} personally.
 - "unsupported": user asked for a service ${stylist} doesn't offer.
 - "unknown": you can't tell what they want yet — ask one clarifying question.
+
+CATEGORY / BROAD QUESTIONS — IMPORTANT (do not give a generic yes/no):
+- When a client asks about a CATEGORY or broad term ("do you offer treatment?", "do you do color?", "what kind of perms?", "any haircuts?"), look at the services list above and find EVERY service whose category or name matches.
+- If MULTIPLE services match, NAME them all in your reply and ask which one. Put their ids in recommendedServiceIds (max 3). Set intent="service_guidance".
+  Example — client asks "do you offer treatment?" and the list has Head Spa, Keratin Treatment, Milbon Treatment:
+    reply: "Yes! ${stylist} offers a few treatments — Head Spa, Keratin Treatment, and Milbon Treatment. Which one are you interested in?"
+- If exactly ONE service matches, name that one specifically (not "yes we do").
+- NEVER answer a category question with a bare "Yes, we offer treatments." Always enumerate the actual matching service names from the list.
 
 Time extraction rules (very important — be precise, don't guess):
 - "next week" → type="next_week".
