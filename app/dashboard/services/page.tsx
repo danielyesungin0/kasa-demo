@@ -5,6 +5,7 @@ import Link from "next/link";
 import { PageShell } from "@/components/PageShell";
 import { CopyButton } from "@/components/CopyButton";
 import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/cn";
 
 const supabase = createClient();
 
@@ -75,19 +76,23 @@ export default function ServicesSettingsPage() {
 
   return (
     <PageShell variant="stylist">
-      <div className="mx-auto max-w-3xl px-4 pb-24">
-        <header className="mt-6 mb-2 flex items-center justify-between gap-3">
-          <h1 className="font-display text-2xl text-ink-900">
+      <div className="mx-auto max-w-2xl px-4 pb-24 sm:px-6">
+        <header className="mt-6 mb-1 flex items-center justify-between gap-3">
+          <h1 className="font-display text-xl text-ink-900 sm:text-2xl">
             Booking helper settings
           </h1>
           <Link
             href="/dashboard"
-            className="text-sm text-ink-500 hover:text-ink-900"
+            className="shrink-0 text-sm text-ink-500 hover:text-ink-900"
           >
             ← Dashboard
           </Link>
         </header>
+        <p className="mb-2 text-sm text-ink-500">
+          Manage what your booking helper says and does.
+        </p>
 
+        <SquareStatusSection />
         <BookingLinkSection />
         <ServicesSection />
         <UnsupportedSection />
@@ -95,6 +100,132 @@ export default function ServicesSettingsPage() {
       </div>
     </PageShell>
   );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Square status                                                               */
+/* -------------------------------------------------------------------------- */
+
+type StylistStatus = {
+  squareConnected: boolean;
+  squareTokenStale: boolean;
+  businessName: string | null;
+  locationName: string | null;
+  teamMemberName: string | null;
+  lastSyncedAt: string | null;
+  syncedServicesCount: number;
+};
+
+function SquareStatusSection() {
+  const [status, setStatus] = useState<StylistStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/stylist/status")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setStatus(d))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <Section title="Square">
+        <p className="text-sm text-ink-500">Loading…</p>
+      </Section>
+    );
+  }
+
+  const connected = Boolean(status?.squareConnected);
+
+  return (
+    <Section title="Square">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-medium text-ink-900">
+            {connected
+              ? status?.businessName ?? status?.locationName ?? "Connected"
+              : "Not connected"}
+          </p>
+          {connected && status?.teamMemberName && (
+            <p className="text-sm text-ink-500">{status.teamMemberName}</p>
+          )}
+        </div>
+        <span
+          className={cn(
+            "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium",
+            !connected
+              ? "bg-cream-200 text-ink-500"
+              : status?.squareTokenStale
+              ? "bg-yellow-100 text-yellow-800"
+              : "bg-success-soft text-success"
+          )}
+        >
+          <span
+            className={cn(
+              "h-1.5 w-1.5 rounded-full",
+              !connected
+                ? "bg-ink-400"
+                : status?.squareTokenStale
+                ? "bg-yellow-500"
+                : "bg-success"
+            )}
+          />
+          {!connected
+            ? "Not connected"
+            : status?.squareTokenStale
+            ? "Reconnect"
+            : "Connected"}
+        </span>
+      </div>
+
+      {connected ? (
+        <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+          <div>
+            <dt className="text-ink-500">Synced services</dt>
+            <dd className="font-medium text-ink-900">
+              {status?.syncedServicesCount ?? 0}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-ink-500">Last synced</dt>
+            <dd className="font-medium text-ink-900">
+              {fmtSync(status?.lastSyncedAt ?? null)}
+            </dd>
+          </div>
+        </dl>
+      ) : (
+        <a
+          href="/api/square/connect"
+          className="mt-3 inline-flex rounded-full bg-ink-900 px-4 py-2 text-sm font-medium text-cream-50"
+        >
+          Connect Square
+        </a>
+      )}
+
+      {connected && (status?.syncedServicesCount ?? 0) === 0 && (
+        <p className="mt-3 rounded-xl bg-cream-100 px-3 py-2 text-xs leading-relaxed text-ink-500">
+          No services synced yet. Re-open{" "}
+          <Link href="/setup?continue=true" className="underline">
+            setup
+          </Link>{" "}
+          to pull your Square catalog.
+        </p>
+      )}
+    </Section>
+  );
+}
+
+function fmtSync(iso: string | null): string {
+  if (!iso) return "—";
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "—";
+  const mins = Math.floor((Date.now() - t) / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -154,12 +285,15 @@ function ServicesSection() {
       {loading ? (
         <p className="text-sm text-ink-500">Loading…</p>
       ) : services.length === 0 ? (
-        <p className="text-sm text-ink-500">
-          No synced services yet. Connect Square and sync your catalog, then
-          they&rsquo;ll appear here.
-        </p>
+        <div className="rounded-2xl border border-dashed border-ink-200 bg-cream-50 p-5 text-center">
+          <p className="text-sm font-medium text-ink-700">No services synced yet</p>
+          <p className="mt-1 text-sm text-ink-500">
+            Connect Square and sync your catalog, then your services appear here
+            to manage.
+          </p>
+        </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {services.map((svc) => (
             <ServiceRow key={svc.id} service={svc} />
           ))}
@@ -520,7 +654,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="mt-6 rounded-3xl border border-ink-100 bg-white p-6">
+    <section className="mt-4 rounded-2xl border border-ink-100 bg-white p-4 sm:mt-6 sm:rounded-3xl sm:p-6">
       <h2 className="mb-3 font-display text-xs uppercase tracking-[0.16em] text-ink-500">
         {title}
       </h2>

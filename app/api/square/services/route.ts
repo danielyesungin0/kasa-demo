@@ -174,10 +174,15 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Save service_catalog back to the stylist row
+  // Save service_catalog + stamp the sync time on the stylist row. The
+  // dashboard/settings surface last_synced_at so the provider can trust the
+  // synced data is current. (Migration 005 adds the column.)
   await admin
     .from("stylists")
-    .update({ service_catalog: serviceCatalog })
+    .update({
+      service_catalog: serviceCatalog,
+      last_synced_at: new Date().toISOString(),
+    })
     .eq("id", resolved.id);
 
   // Upsert synced services into provider_services. Dedup on

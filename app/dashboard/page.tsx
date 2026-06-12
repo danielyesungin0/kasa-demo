@@ -6,7 +6,7 @@ import Link from "next/link";
 import { PageShell } from "@/components/PageShell";
 import { CopyButton } from "@/components/CopyButton";
 import { QuickReplyCard } from "@/components/QuickReplyCard";
-import { STYLIST, QUICK_REPLIES } from "@/lib/mock-data";
+import { QUICK_REPLIES } from "@/lib/mock-data";
 import { createClient } from "@/lib/supabase/client";
 
 const supabase = createClient();
@@ -23,6 +23,20 @@ type RealBooking = {
   square_booking_id: string | null;
 };
 
+/** Real provider status from /api/stylist/status. */
+type StylistStatus = {
+  hasStylistRow: boolean;
+  squareConnected: boolean;
+  squareTokenStale: boolean;
+  name: string | null;
+  slug: string | null;
+  businessName: string | null;
+  locationName: string | null;
+  teamMemberName: string | null;
+  lastSyncedAt: string | null;
+  syncedServicesCount: number;
+};
+
 function EmptyState({ text }: { text: string }) {
   return (
     <div className="rounded-2xl border border-dashed border-ink-200 bg-cream-50 p-6 text-center text-sm text-ink-500">
@@ -31,29 +45,104 @@ function EmptyState({ text }: { text: string }) {
   );
 }
 
-function SquareConnectionCard() {
-  const businessName = STYLIST.location.split("·")[0].trim();
+function SquareConnectionCard({ status }: { status: StylistStatus | null }) {
+  const connected = Boolean(status?.squareConnected);
+  const stale = Boolean(status?.squareTokenStale);
+
+  // Status pill: reconnect (stale) > connected > not connected.
+  const pill = !connected ? (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-cream-200 px-2.5 py-1 text-[11px] font-medium text-ink-500">
+      <span className="h-1.5 w-1.5 rounded-full bg-ink-400" />
+      Not connected
+    </span>
+  ) : stale ? (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-yellow-100 px-2.5 py-1 text-[11px] font-medium text-yellow-800">
+      <span className="h-1.5 w-1.5 rounded-full bg-yellow-500" />
+      Reconnect needed
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-success-soft px-2.5 py-1 text-[11px] font-medium text-success">
+      <span className="h-1.5 w-1.5 rounded-full bg-success" />
+      Connected
+    </span>
+  );
+
+  const businessName =
+    status?.businessName ?? status?.locationName ?? "Your studio";
+
   return (
     <section className="rounded-3xl border border-ink-100 bg-cream-50 p-6">
       <div className="flex items-start justify-between gap-3">
         <h2 className="font-display text-xs uppercase tracking-[0.16em] text-ink-500">Square</h2>
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-success-soft px-2.5 py-1 text-[11px] font-medium text-success">
-          <span className="h-1.5 w-1.5 rounded-full bg-success" />
-          Connected
-        </span>
+        {pill}
       </div>
-      <div className="mt-3 flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-ink-900 font-display text-base text-cream-50">◼</div>
-        <div className="min-w-0 flex-1">
-          <p className="text-[15px] font-medium leading-tight text-ink-900">{businessName}</p>
-          <p className="mt-1 text-sm leading-relaxed text-ink-500">Services and availability sync from Square automatically.</p>
-        </div>
-      </div>
-      <p className="mt-4 text-xs leading-relaxed text-ink-400">
-        To update your hours or services, make changes in Square — they&apos;ll reflect here automatically.
-      </p>
+
+      {connected ? (
+        <>
+          <div className="mt-3 flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-ink-900 font-display text-base text-cream-50">◼</div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[15px] font-medium leading-tight text-ink-900">{businessName}</p>
+              {status?.locationName && (
+                <p className="mt-0.5 text-sm text-ink-500">{status.locationName}</p>
+              )}
+              {status?.teamMemberName && (
+                <p className="mt-0.5 text-sm text-ink-500">{status.teamMemberName}</p>
+              )}
+            </div>
+          </div>
+          <dl className="mt-4 space-y-1.5 text-sm">
+            <div className="flex justify-between gap-3">
+              <dt className="text-ink-500">Synced services</dt>
+              <dd className="font-medium text-ink-900">{status?.syncedServicesCount ?? 0}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-ink-500">Last synced</dt>
+              <dd className="font-medium text-ink-900">{formatSyncTime(status?.lastSyncedAt ?? null)}</dd>
+            </div>
+          </dl>
+          {(status?.syncedServicesCount ?? 0) === 0 && (
+            <p className="mt-3 rounded-xl bg-cream-100 px-3 py-2 text-xs leading-relaxed text-ink-500">
+              No services synced yet. Re-open setup to pull your Square catalog.
+            </p>
+          )}
+          {stale && (
+            <a
+              href="/api/square/connect"
+              className="mt-4 inline-flex rounded-full bg-ink-900 px-4 py-2 text-xs font-medium text-cream-50 hover:bg-ink-800"
+            >
+              Reconnect Square
+            </a>
+          )}
+        </>
+      ) : (
+        <>
+          <p className="mt-3 text-sm leading-relaxed text-ink-600">
+            Connect your Square account to sync your services and availability.
+          </p>
+          <a
+            href="/api/square/connect"
+            className="mt-4 inline-flex rounded-full bg-ink-900 px-4 py-2 text-xs font-medium text-cream-50 hover:bg-ink-800"
+          >
+            Connect Square
+          </a>
+        </>
+      )}
     </section>
   );
+}
+
+/** "Just now" / "2h ago" / date — never crashes on null. */
+function formatSyncTime(iso: string | null): string {
+  if (!iso) return "—";
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "—";
+  const mins = Math.floor((Date.now() - t) / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function BookingCard({ b, compact }: { b: RealBooking; compact?: boolean }) {
@@ -85,7 +174,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const [bookings, setBookings] = useState<RealBooking[]>([]);
   const [loading, setLoading] = useState(true);
-  const [squareTokenStale, setSquareTokenStale] = useState(false);
+  const [status, setStatus] = useState<StylistStatus | null>(null);
 
   useEffect(() => {
     fetch("/api/bookings")
@@ -93,22 +182,36 @@ export default function DashboardPage() {
       .then(({ bookings: data }) => setBookings(data ?? []))
       .catch(() => {})
       .finally(() => setLoading(false));
-    // Check token freshness so we can prompt the stylist to reconnect
-    // before bookings start silently failing.
+    // Real provider status: name, slug, Square connection + sync state.
     fetch("/api/stylist/status")
-      .then((r) => r.json())
-      .then((d) => setSquareTokenStale(Boolean(d?.squareTokenStale)))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: StylistStatus | null) => setStatus(d))
       .catch(() => {});
   }, []);
 
   const preview = bookings.slice(0, 3);
+  const squareTokenStale = Boolean(status?.squareTokenStale);
+
+  // Real name + booking link, with neutral fallbacks (never mock "Shen").
+  const displayName = status?.name ?? "there";
+  const bookingUrl =
+    status?.slug && typeof window !== "undefined"
+      ? `${window.location.origin}/book/${status.slug}`
+      : status?.slug
+      ? `/book/${status.slug}`
+      : null;
 
   const headerRight = (
     <nav className="flex items-center gap-1 text-sm">
       <Link href="/dashboard/services" className="inline-flex min-h-[40px] items-center rounded-full px-3.5 py-2 text-sm text-ink-700 hover:bg-cream-100">
         Settings
       </Link>
-      <a href="/shen" className="inline-flex min-h-[40px] items-center rounded-full bg-cream-100 px-3.5 py-2 text-sm text-ink-700 hover:bg-cream-200">
+      <a
+        href={status?.slug ? `/book/${status.slug}` : "/shen"}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex min-h-[40px] items-center rounded-full bg-cream-100 px-3.5 py-2 text-sm text-ink-700 hover:bg-cream-200"
+      >
         Preview ↗
       </a>
       <button
@@ -124,7 +227,7 @@ export default function DashboardPage() {
   return (
     <PageShell variant="stylist" headerRight={headerRight}>
       <div className="mb-10">
-        <p className="font-display text-sm uppercase tracking-[0.18em] text-ink-400">Hi, {STYLIST.name}</p>
+        <p className="font-display text-sm uppercase tracking-[0.18em] text-ink-400">Hi, {displayName}</p>
         <h1 className="mt-2 font-display text-3xl font-medium tracking-tight text-ink-900 sm:text-4xl">
           Your booking dashboard
         </h1>
@@ -155,15 +258,23 @@ export default function DashboardPage() {
           <div className="overflow-hidden rounded-3xl border border-ink-100 bg-cream-50 shadow-card">
             <div className="bg-gradient-to-br from-accent-soft/70 to-cream-50 p-6 sm:p-8">
               <p className="font-display text-xs uppercase tracking-[0.18em] text-accent-dark">Your booking link</p>
-              <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
-                <p className="font-display text-3xl font-medium tracking-tight text-ink-900 sm:text-[36px]">
-                  {STYLIST.bookingUrl}
+              {bookingUrl ? (
+                <>
+                  <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
+                    <p className="break-all font-display text-2xl font-medium tracking-tight text-ink-900 sm:text-[32px]">
+                      {bookingUrl.replace(/^https?:\/\//, "")}
+                    </p>
+                    <CopyButton value={bookingUrl} variant="primary" label="Copy link" copiedLabel="Link copied" />
+                  </div>
+                  <p className="mt-4 max-w-md text-sm leading-relaxed text-ink-600">
+                    Share in your bio or paste into any DM — clients book instantly, no login needed.
+                  </p>
+                </>
+              ) : (
+                <p className="mt-3 text-sm leading-relaxed text-ink-600">
+                  Finish setup to get your booking link.
                 </p>
-                <CopyButton value={STYLIST.bookingUrl} variant="primary" label="Copy link" copiedLabel="Link copied" />
-              </div>
-              <p className="mt-4 max-w-md text-sm leading-relaxed text-ink-600">
-                Share in your bio or paste into any DM — clients book instantly, no login needed.
-              </p>
+              )}
             </div>
           </div>
 
@@ -199,7 +310,7 @@ export default function DashboardPage() {
 
         {/* RIGHT */}
         <div className="space-y-6">
-          <SquareConnectionCard />
+          <SquareConnectionCard status={status} />
           <section>
             <h2 className="mb-3 font-display text-xl font-medium text-ink-900">Quick replies</h2>
             <p className="mb-3 text-sm text-ink-500">Tap copy, then paste into any DM.</p>
