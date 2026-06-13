@@ -342,26 +342,111 @@ function nyWallToUtcIso(dateKey: string, hm: string): string {
   return new Date(utcMs).toISOString();
 }
 
-// Fetch real slots from Supabase-backed API; fall back to mock data on error.
-// `slug` scopes the request to a specific provider; omitted on the legacy
-// /shen path, where the API falls back to the first stylist row.
+// ── Real availability source ────────────────────────────────────────────────
+//
+// For a slug-based provider (e.g. /book/shen), slots come ONLY from
+// /api/availability — never mock. If the API returns 0 slots, callers show an
+// honest empty state ("No openings this week"). Mock is used ONLY on the
+// legacy slug-less /shen / internal demo path.
+//
+// /api/availability returns the full multi-week set (weekCount: 3), so we
+// fetch once per service and cache it. The cache is module-level keyed by
+// (slug, serviceId) so the chat helpers and TimeStage share one fetch.
+
+const realSlotsCache = new Map<string, TimeSlot[]>();
+
+function realSlotsCacheKey(serviceId: string, slug?: string): string {
+  return `${slug ?? "__legacy__"}::${serviceId}`;
+}
+
+/** Invalidate cached slots for a service (e.g. after a booking consumes one). */
+function invalidateRealSlots(serviceId: string, slug?: string) {
+  realSlotsCache.delete(realSlotsCacheKey(serviceId, slug));
+}
+
+/**
+ * SYNCHRONOUS read of already-cached real slots, for the chat helpers that run
+ * inside non-async handlers. The cache is primed on service selection (see the
+ * priming effect in the component), so it's warm by the time these run.
+ *
+ * - slug provider: returns cached real slots, or [] if cold — NEVER mock.
+ *   (A cold cache is rare; if it happens the helper shows the empty state,
+ *   which is correct: better than fabricating Mon/Wed slots.)
+ * - slug-less legacy/demo: returns mock so /shen keeps working.
+ */
+function cachedRealSlots(serviceId: string, slug?: string): TimeSlot[] {
+  const cached = realSlotsCache.get(realSlotsCacheKey(serviceId, slug));
+  if (cached) return cached;
+  if (slug) return []; // real provider, cold cache → empty, never mock
+  return getSlotsForService(serviceId); // legacy demo only
+}
+
+/**
+ * All available slots (3 weeks) for a service.
+ *
+ * - slug present (real provider): returns ONLY API slots. On error or empty,
+ *   returns [] — NEVER mock. Callers render the honest empty state.
+ * - slug absent (legacy demo): falls back to mock so /shen still works.
+ */
+async function getRealSlots(
+  serviceId: string,
+  slug?: string
+): Promise<TimeSlot[]> {
+  const key = realSlotsCacheKey(serviceId, slug);
+  const cached = realSlotsCache.get(key);
+  if (cached) return cached;
+
+  const isRealProvider = Boolean(slug);
+  try {
+    const slugParam = slug ? `&slug=${encodeURIComponent(slug)}` : "";
+    // weekShift=0 — the API returns weekCount:3 from this point, covering the
+    // 3 week tabs the UI buckets client-side.
+    const res = await fetch(
+      `/api/availability?serviceId=${encodeURIComponent(serviceId)}&weekShift=0${slugParam}`
+    );
+    if (!res.ok) throw new Error("availability api error");
+    const data = await res.json();
+    if (Array.isArray(data.slots)) {
+      const slots = data.slots as TimeSlot[];
+      // Real provider: cache + return whatever the API gave (incl. []).
+      if (isRealProvider) {
+        realSlotsCache.set(key, slots);
+        return slots;
+      }
+      // Legacy: use API slots if non-empty, else mock below.
+      if (slots.length > 0) {
+        realSlotsCache.set(key, slots);
+        return slots;
+      }
+    }
+  } catch {
+    // Real provider: do NOT fall back to mock — an error means "we couldn't
+    // load real availability", and showing fake slots would be worse.
+    if (isRealProvider) {
+      realSlotsCache.set(key, []);
+      return [];
+    }
+    // Legacy: fall through to mock below.
+  }
+
+  // Slug-less legacy / internal demo only.
+  const mock = getSlotsForService(serviceId);
+  realSlotsCache.set(key, mock);
+  return mock;
+}
+
+// Legacy helper kept for the single existing fetch call site. For real
+// providers it now delegates to getRealSlots (no mock); for slug-less it
+// preserves the old mock-fallback behavior.
 async function fetchSlotsForService(
   serviceId: string,
   weekShift = 0,
   slug?: string
 ): Promise<TimeSlot[]> {
-  try {
-    const slugParam = slug ? `&slug=${encodeURIComponent(slug)}` : "";
-    const res = await fetch(
-      `/api/availability?serviceId=${encodeURIComponent(serviceId)}&weekShift=${weekShift}${slugParam}`
-    );
-    if (!res.ok) throw new Error("availability api error");
-    const data = await res.json();
-    if (Array.isArray(data.slots) && data.slots.length > 0) return data.slots;
-  } catch {
-    // fall through to mock
-  }
-  return getSlotsForService(serviceId);
+  // weekShift is honored by the caller's own filtering; getRealSlots returns
+  // the full 3-week set which the caller buckets/filters as before.
+  void weekShift;
+  return getRealSlots(serviceId, slug);
 }
 
 /**
@@ -501,6 +586,17 @@ export function ClientBookingPage({
       .catch(() => {});
   }, [slugQS]);
 
+  // Prime the real-slots cache whenever a service becomes active or
+  // recommended, so the synchronous chat helpers (cachedRealSlots) have real
+  // availability ready and never fall back to mock for a slug provider.
+  const primeServiceId =
+    context.selectedService?.id ?? context.lastRecommendedService?.id ?? null;
+  useEffect(() => {
+    if (!primeServiceId) return;
+    // Fire-and-forget: getRealSlots caches the result keyed by (slug, id).
+    void getRealSlots(primeServiceId, slug);
+  }, [primeServiceId, slug]);
+
   const assistantRef = useRef<HTMLDivElement | null>(null);
 
   const isMobile = useIsMobile();
@@ -519,7 +615,7 @@ export function ClientBookingPage({
   ) {
     const svc = context.selectedService ?? context.lastRecommendedService;
     const chipAvailability = computeChipAvailability(
-      svc ? getSlotsForService(svc.id) : [],
+      svc ? cachedRealSlots(svc.id, slug) : [],
       anchorDateKey,
       currentWeekShift,
       slots
@@ -823,7 +919,7 @@ export function ClientBookingPage({
         id: `t-reschedule-prompt-${Date.now()}`,
         text: `What time would you like instead?`,
       });
-      const allSlots = getSlotsForService(service.id);
+      const allSlots = cachedRealSlots(service.id, slug);
       const initial = allSlots.slice(0, 6);
       const anchorKey = initial[0]?.dateKey ?? null;
       const weekShift = anchorKey ? deriveWeekShift(anchorKey) : null;
@@ -1543,7 +1639,7 @@ export function ClientBookingPage({
     return { lengthHint, colorDirection, permStyle };
   }
 
-  function handleBookOrSwitch(
+  async function handleBookOrSwitch(
     intent: Extract<Intent, { kind: "book" | "switch_service" }>,
     clarificationKey?: string
   ) {
@@ -1759,7 +1855,11 @@ export function ClientBookingPage({
 
     if (hasSpecificTime && intent.kind === "book") {
       patchContext({ selectedService: rec.primary });
-      const allSlots = getSlotsForService(rec.primary.id);
+      // Await real slots here — this is often the FIRST slot display for the
+      // service (e.g. "haircut next Tuesday"), so the cache may be cold. Using
+      // the sync accessor would return [] before priming runs. getRealSlots
+      // fetches + caches; no mock for slug providers.
+      const allSlots = await getRealSlots(rec.primary.id, slug);
 
       // Detect exact-hour mismatch — user asked "at 5pm" but we don't have it.
       // We check on the *day they specified* if any. The fuzzy/around case
@@ -1935,7 +2035,7 @@ export function ClientBookingPage({
       return;
     }
 
-    const allSlots = getSlotsForService(svc.id);
+    const allSlots = cachedRealSlots(svc.id, slug);
     const result = filterSlotsByRefinement(allSlots, intent, context);
 
     // Past-horizon: user asked beyond what we have data for
@@ -2200,7 +2300,7 @@ export function ClientBookingPage({
     // Build a friendly day label from whatever the user named. Prefer a slot's
     // own labels when available; otherwise compute "Mon May 18" from a synth
     // dateKey. This avoids the awkward "the 18th" form.
-    const allSlots = getSlotsForService(svc.id);
+    const allSlots = cachedRealSlots(svc.id, slug);
     const namedSlot = intent.dateKey
       ? allSlots.find((s) => s.dateKey === intent.dateKey)
       : intent.dayOfMonth !== null
@@ -2607,7 +2707,7 @@ export function ClientBookingPage({
     ) {
       const svc = context.lastRecommendedService;
       patchContext({ selectedService: svc });
-      const allSlots = getSlotsForService(svc.id);
+      const allSlots = await getRealSlots(svc.id, slug);
       const ranked = rankTimeSlots(allSlots, emptyHints()).slice(0, 6);
       pushTurn({
         kind: "bot-text",
@@ -2825,7 +2925,7 @@ export function ClientBookingPage({
     if (opt.key === "addon-no") {
       const svc = context.selectedService ?? context.lastRecommendedService;
       if (svc) {
-        const allSlots = getSlotsForService(svc.id);
+        const allSlots = cachedRealSlots(svc.id, slug);
         const ranked = rankTimeSlots(allSlots, emptyHints()).slice(0, 6);
         pushTurn({ kind: "bot-text", id: `t-times-text-${Date.now()}`, text: `Here are ${sName()}'s best openings for ${svc.name}.` });
         showSlots(ranked, ranked[0]?.dateKey ?? null);
@@ -3088,7 +3188,7 @@ export function ClientBookingPage({
     if (existingPrimary && existingPrimary.id !== svc.id) {
       const updated = [...context.additionalServices.filter((s) => s.category !== svc.category), svc];
       patchContext({ additionalServices: updated });
-      const allSlots = getSlotsForService(existingPrimary.id);
+      const allSlots = cachedRealSlots(existingPrimary.id, slug);
       const ranked = rankTimeSlots(allSlots, emptyHints()).slice(0, 6);
       pushTurn({
         kind: "bot-text",
@@ -3192,7 +3292,7 @@ export function ClientBookingPage({
     }
 
     if (chipKey === "next-day") {
-      const allSlots = getSlotsForService(svc.id);
+      const allSlots = cachedRealSlots(svc.id, slug);
       // Find the next distinct date after anchorDateKey
       const nextDate = anchorDateKey
         ? allSlots.find((s) => s.dateKey > anchorDateKey)?.dateKey
@@ -3223,7 +3323,7 @@ export function ClientBookingPage({
     ) {
       const targetShift =
         chipKey === "this-week" ? 0 : chipKey === "next-week" ? 1 : 2;
-      const allSlots = getSlotsForService(svc.id);
+      const allSlots = cachedRealSlots(svc.id, slug);
       const result = getSlotsForWeekShift(allSlots, targetShift);
 
       if (result.outcome === "past-horizon") {
@@ -3780,6 +3880,7 @@ export function ClientBookingPage({
             service={
               (context.selectedService ?? context.lastRecommendedService)!
             }
+            slug={slug}
             timeHints={emptyHints()}
             onPick={(slot) => {
               track("slot_selected", { source: "time-stage" });
@@ -3948,6 +4049,9 @@ export function ClientBookingPage({
                   return false;
                 }
                 const data = await res.json();
+                // The just-booked slot now counts as blocked. Invalidate the
+                // cache so a subsequent slot view re-fetches and excludes it.
+                invalidateRealSlots(svc.id, slug);
                 setBookingResult({
                   bookingId: data.bookingId,
                   squareBookingId: data.squareBookingId ?? null,
@@ -7406,15 +7510,34 @@ function shortServiceName(full: string): string {
 
 function TimeStage({
   service,
+  slug,
   onPick,
   onBack,
 }: {
   service: Service;
+  slug?: string;
   timeHints: TimeHints;
   onPick: (slot: TimeSlot) => void;
   onBack: () => void;
 }) {
-  const allSlots = useMemo(() => getSlotsForService(service.id), [service.id]);
+  // Real availability from /api/availability. null = loading; [] = loaded but
+  // no openings (honest empty state). For slug providers, getRealSlots never
+  // returns mock; for the legacy slug-less demo it falls back to mock.
+  const [loadedSlots, setLoadedSlots] = useState<TimeSlot[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setLoadedSlots(null);
+    getRealSlots(service.id, slug).then((s) => {
+      if (!cancelled) setLoadedSlots(s);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [service.id, slug]);
+
+  // Downstream week-bucketing logic operates on an array; use [] while loading
+  // (we render a loading state separately below before the slot grid).
+  const allSlots = loadedSlots ?? [];
 
   // Week tab state. 0 = this week (starting today), 1 = next week, 2 = in two
   // weeks. Defaults to whichever week the earliest available slot falls in,
@@ -7503,6 +7626,26 @@ function TimeStage({
       </h1>
       <p className="mt-1 text-sm text-ink-500">All available openings.</p>
 
+      {/* Loading state — real availability is being fetched. */}
+      {loadedSlots === null && (
+        <p className="mt-6 text-sm text-ink-400">Finding openings…</p>
+      )}
+
+      {/* Loaded but ZERO openings across all weeks — honest empty state, not
+          mock, not blank. */}
+      {loadedSlots !== null && allSlots.length === 0 && (
+        <div className="mt-6 rounded-2xl border border-dashed border-ink-200 bg-cream-50 p-5 text-center">
+          <p className="text-sm font-medium text-ink-700">No openings right now</p>
+          <p className="mt-1 text-sm text-ink-500">
+            {sName()} has no available times in the next few weeks. Check back
+            soon, or message {sName()} directly.
+          </p>
+        </div>
+      )}
+
+      {/* Week tabs + slot grid — only when we have real slots. */}
+      {loadedSlots !== null && allSlots.length > 0 && (
+      <>
       {/* Week tabs */}
       <div className="mt-4 flex gap-2 overflow-x-auto" role="tablist">
         {weekTabs.map((t) => {
@@ -7540,7 +7683,7 @@ function TimeStage({
       <div className="mt-6 space-y-6">
         {grouped.length === 0 ? (
           <p className="text-sm text-ink-500">
-            No openings this week. Try another tab above.
+            No openings this week. Try another week.
           </p>
         ) : (
           grouped.map(([day, daySlots]) => (
@@ -7557,6 +7700,8 @@ function TimeStage({
           ))
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }
