@@ -98,6 +98,49 @@ export async function getProviderUnsupportedTerms(
   return rules.map((r) => r.trigger_term.toLowerCase()).filter(Boolean);
 }
 
+const WEEKDAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+] as const;
+
+/**
+ * The provider's REAL working days (full weekday names), derived from
+ * stylist_availability — the same source the slot generator uses. This keeps
+ * the AI's text answers ("are you open Wednesday?") consistent with the
+ * actual schedule, instead of a stale hardcoded list.
+ *
+ * Returns [] when no availability rows exist; caller falls back to its
+ * default so behavior is unchanged for unconfigured providers.
+ */
+export async function getProviderWorkingDays(
+  stylistId: string
+): Promise<string[]> {
+  try {
+    const admin = createServiceRoleSupabaseClient();
+    const { data, error } = await admin
+      .from("stylist_availability")
+      .select("day_of_week, is_active")
+      .eq("stylist_id", stylistId)
+      .eq("is_active", true)
+      .order("day_of_week");
+    if (error || !data || data.length === 0) return [];
+    // Map active day_of_week (0=Sun..6=Sat) → full weekday name.
+    const days: string[] = [];
+    for (const row of data as Array<{ day_of_week: number }>) {
+      const name = WEEKDAY_NAMES[row.day_of_week];
+      if (name && !days.includes(name)) days.push(name);
+    }
+    return days;
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Synced provider services mapped to the client's `Service` shape, for
  * rendering tappable service cards.

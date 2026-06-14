@@ -13,6 +13,7 @@ import { detectUnsupportedService } from "@/lib/unsupported-services";
 import {
   getProviderServices,
   getProviderUnsupportedTerms,
+  getProviderWorkingDays,
 } from "@/lib/provider-services";
 
 /**
@@ -191,6 +192,15 @@ export async function POST(request: NextRequest) {
     ? await getProviderUnsupportedTerms(resolvedStylist.id)
     : [];
 
+  // Real working days from stylist_availability (same source as slots), so the
+  // AI's text answers about which days she's open match the actual schedule.
+  // Falls back to the legacy hardcoded list only when no availability is set.
+  const providerWorkingDays = resolvedStylist
+    ? await getProviderWorkingDays(resolvedStylist.id)
+    : [];
+  const workingDays =
+    providerWorkingDays.length > 0 ? providerWorkingDays : WORKING_DAYS_LABELS;
+
   // Build the grounding service list the AI sees. Provider rows win when
   // present; aliases are appended to each name so the model matches broad
   // terms like "treatment". Falls back to the mock SERVICES shape.
@@ -228,7 +238,7 @@ export async function POST(request: NextRequest) {
   const faqCtx: FAQContext = {
     stylistName,
     location: profile.location,
-    workingDays: WORKING_DAYS_LABELS,
+    workingDays: workingDays,
     services: SERVICES,
   };
 
@@ -259,7 +269,7 @@ export async function POST(request: NextRequest) {
       stylistName,
       studioName: profile.businessName,
       location: profile.location,
-      workingDays: WORKING_DAYS_LABELS,
+      workingDays: workingDays,
       services: groundingServices,
       conversation,
       userMessage: message,
