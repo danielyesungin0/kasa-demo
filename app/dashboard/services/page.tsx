@@ -6,6 +6,7 @@ import { PageShell } from "@/components/PageShell";
 import { CopyButton } from "@/components/CopyButton";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/cn";
+import { ExpandChevron } from "@/components/ExpandChevron";
 
 const supabase = createClient();
 
@@ -352,26 +353,23 @@ function ServiceRow({ service }: { service: ProviderService }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="rounded-2xl border border-ink-100 bg-cream-50">
-      {/* Compact header — always visible. Tap the row to expand the editor.
-          The visible toggle is a separate tap target so it doesn't expand. */}
-      <div className="flex items-center justify-between gap-3 p-4">
+    <div
+      className={cn(
+        "overflow-hidden rounded-2xl border bg-cream-50 transition",
+        expanded ? "border-ink-300 shadow-soft" : "border-ink-100"
+      )}
+    >
+      {/* Compact header — the whole row is tappable to expand. The visible
+          toggle is a separate target on the right so it doesn't expand. The
+          chevron makes the row clearly look expandable. */}
+      <div className="flex items-center gap-2 pr-3">
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="flex min-h-[44px] min-w-0 flex-1 items-center gap-3 text-left"
+          className="flex min-h-[56px] min-w-0 flex-1 items-center gap-3 rounded-l-2xl p-4 text-left transition hover:bg-cream-100 active:bg-cream-100"
           aria-expanded={expanded}
         >
-          <span
-            className={cn(
-              "shrink-0 text-ink-400 transition-transform",
-              expanded && "rotate-90"
-            )}
-            aria-hidden
-          >
-            ›
-          </span>
-          <span className="min-w-0">
+          <span className="min-w-0 flex-1">
             <span className="block truncate font-medium text-ink-900">
               {service.name}
             </span>
@@ -379,7 +377,13 @@ function ServiceRow({ service }: { service: ProviderService }) {
               {service.category ?? "—"} · {priceLabel} · {durLabel}
               {!visible && " · hidden"}
             </span>
+            {!expanded && (
+              <span className="mt-0.5 block text-[11px] font-medium text-accent-dark">
+                Tap to edit
+              </span>
+            )}
           </span>
+          <ExpandChevron expanded={expanded} />
         </button>
         <Toggle checked={visible} onChange={setVisible} label="Visible" />
       </div>

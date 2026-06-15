@@ -7,6 +7,7 @@ import { PageShell } from "@/components/PageShell";
 import { ProgressSteps } from "@/components/ProgressSteps";
 import { CopyButton } from "@/components/CopyButton";
 import { QuickReplyCard } from "@/components/QuickReplyCard";
+import { ExpandChevron } from "@/components/ExpandChevron";
 import {
   SERVICES,
   DEFAULT_AVAILABILITY,
@@ -663,7 +664,8 @@ function ImportedServiceRow({
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-start gap-3 p-4 text-left"
+        aria-expanded={expanded}
+        className="flex min-h-[56px] w-full items-start gap-3 p-4 text-left transition hover:bg-cream-100 active:bg-cream-100"
       >
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -677,18 +679,15 @@ function ImportedServiceRow({
             <span className="px-1.5 text-ink-300">·</span>
             {service.durationLabel}
           </p>
+          {!expanded && (
+            <p className="mt-0.5 text-[11px] font-medium text-accent-dark">
+              Tap to edit
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <StatusPill status={overlay.status} />
-          <span
-            className={cn(
-              "text-ink-400 transition",
-              expanded && "rotate-180"
-            )}
-            aria-hidden
-          >
-            ⌄
-          </span>
+          <ExpandChevron expanded={expanded} />
         </div>
       </button>
 
