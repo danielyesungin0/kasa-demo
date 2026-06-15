@@ -359,14 +359,15 @@ function ServiceRow({ service }: { service: ProviderService }) {
         expanded ? "border-ink-300 shadow-soft" : "border-ink-100"
       )}
     >
-      {/* Compact header — the whole row is tappable to expand. The visible
-          toggle is a separate target on the right so it doesn't expand. The
-          chevron makes the row clearly look expandable. */}
-      <div className="flex items-center gap-2 pr-3">
+      {/* Compact header. Standard disclosure-row pattern: tappable content on
+          the left, the Visible toggle (a distinct control) in the middle, and
+          the expand chevron flush-right as the rightmost element. The content
+          area + chevron expand; the toggle is its own tap target. */}
+      <div className="flex items-stretch">
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="flex min-h-[56px] min-w-0 flex-1 items-center gap-3 rounded-l-2xl p-4 text-left transition hover:bg-cream-100 active:bg-cream-100"
+          className="flex min-h-[56px] min-w-0 flex-1 items-center rounded-l-2xl p-4 text-left transition hover:bg-cream-100 active:bg-cream-100"
           aria-expanded={expanded}
         >
           <span className="min-w-0 flex-1">
@@ -383,9 +384,23 @@ function ServiceRow({ service }: { service: ProviderService }) {
               </span>
             )}
           </span>
+        </button>
+
+        {/* Visible toggle — distinct control, doesn't trigger expand. */}
+        <div className="flex shrink-0 items-center pl-1 pr-2">
+          <Toggle checked={visible} onChange={setVisible} label="Visible" />
+        </div>
+
+        {/* Expand chevron — rightmost, also taps to expand. */}
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-label={expanded ? "Collapse" : "Expand"}
+          aria-expanded={expanded}
+          className="flex min-h-[56px] shrink-0 items-center rounded-r-2xl pl-1 pr-4 transition hover:bg-cream-100 active:bg-cream-100"
+        >
           <ExpandChevron expanded={expanded} />
         </button>
-        <Toggle checked={visible} onChange={setVisible} label="Visible" />
       </div>
 
       {/* Expanded editor */}
