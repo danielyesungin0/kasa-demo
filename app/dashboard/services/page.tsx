@@ -77,20 +77,20 @@ export default function ServicesSettingsPage() {
   return (
     <PageShell variant="stylist">
       <div className="mx-auto max-w-2xl px-4 pb-24 sm:px-6">
-        <header className="mt-6 mb-1 flex items-center justify-between gap-3">
-          <h1 className="font-display text-xl text-ink-900 sm:text-2xl">
-            Booking helper settings
-          </h1>
+        <header className="mt-4 mb-1">
           <Link
             href="/dashboard"
-            className="shrink-0 text-sm text-ink-500 hover:text-ink-900"
+            className="-ml-2 inline-flex min-h-[44px] items-center gap-1.5 rounded-full px-2 text-sm text-ink-500 hover:text-ink-900"
           >
             ← Dashboard
           </Link>
+          <h1 className="mt-1 font-display text-2xl text-ink-900">
+            Booking helper settings
+          </h1>
+          <p className="mt-1 text-sm text-ink-500">
+            Manage what your booking helper says and does.
+          </p>
         </header>
-        <p className="mb-2 text-sm text-ink-500">
-          Manage what your booking helper says and does.
-        </p>
 
         <SquareStatusSection />
         <BookingLinkSection />
@@ -197,7 +197,7 @@ function SquareStatusSection() {
       ) : (
         <a
           href="/api/square/connect"
-          className="mt-3 inline-flex rounded-full bg-ink-900 px-4 py-2 text-sm font-medium text-cream-50"
+          className="mt-3 inline-flex min-h-[44px] items-center rounded-full bg-ink-900 px-5 text-sm font-medium text-cream-50"
         >
           Connect Square
         </a>
@@ -349,72 +349,92 @@ function ServiceRow({ service }: { service: ProviderService }) {
   const durLabel =
     service.duration_minutes != null ? `${service.duration_minutes} min` : "—";
 
+  const [expanded, setExpanded] = useState(false);
+
   return (
-    <div className="rounded-2xl border border-ink-100 bg-cream-50 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="font-medium text-ink-900">{service.name}</p>
-          <p className="text-xs text-ink-500">
-            {service.category ?? "—"} · {priceLabel} · {durLabel}
-          </p>
-        </div>
-        <label className="flex shrink-0 items-center gap-2 text-sm text-ink-700">
-          <input
-            type="checkbox"
-            checked={visible}
-            onChange={(e) => setVisible(e.target.checked)}
-          />
-          Visible in chat
-        </label>
-      </div>
-
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <label className="text-sm text-ink-700">
-          Behavior
-          <select
-            value={behavior}
-            onChange={(e) => setBehavior(e.target.value as Behavior)}
-            className="mt-1 w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm"
-          >
-            <option value="book">Book directly</option>
-            <option value="consultation">Requires consultation</option>
-            <option value="handoff">Hand off to me</option>
-            <option value="hidden">Hidden from chat</option>
-          </select>
-        </label>
-        <label className="text-sm text-ink-700">
-          Aliases (comma-separated)
-          <input
-            value={aliases}
-            onChange={(e) => setAliases(e.target.value)}
-            placeholder="treatment, scalp"
-            className="mt-1 w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm"
-          />
-        </label>
-      </div>
-
-      <label className="mt-3 block text-sm text-ink-700">
-        Chat description (optional)
-        <input
-          value={desc}
-          onChange={(e) => setDesc(e.target.value)}
-          placeholder="How the chat should describe this service"
-          className="mt-1 w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm"
-        />
-      </label>
-
-      <div className="mt-3 flex items-center gap-3">
+    <div className="rounded-2xl border border-ink-100 bg-cream-50">
+      {/* Compact header — always visible. Tap the row to expand the editor.
+          The visible toggle is a separate tap target so it doesn't expand. */}
+      <div className="flex items-center justify-between gap-3 p-4">
         <button
           type="button"
-          onClick={save}
-          disabled={saving}
-          className="rounded-full bg-ink-900 px-4 py-2 text-sm font-medium text-cream-50 disabled:opacity-50"
+          onClick={() => setExpanded((v) => !v)}
+          className="flex min-h-[44px] min-w-0 flex-1 items-center gap-3 text-left"
+          aria-expanded={expanded}
         >
-          {saving ? "Saving…" : "Save"}
+          <span
+            className={cn(
+              "shrink-0 text-ink-400 transition-transform",
+              expanded && "rotate-90"
+            )}
+            aria-hidden
+          >
+            ›
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate font-medium text-ink-900">
+              {service.name}
+            </span>
+            <span className="block text-xs text-ink-500">
+              {service.category ?? "—"} · {priceLabel} · {durLabel}
+              {!visible && " · hidden"}
+            </span>
+          </span>
         </button>
-        {saved && <span className="text-sm text-success">Saved</span>}
-        {err && <span className="text-sm text-red-600">Error: {err}</span>}
+        <Toggle checked={visible} onChange={setVisible} label="Visible" />
       </div>
+
+      {/* Expanded editor */}
+      {expanded && (
+        <div className="border-t border-ink-100 px-4 pb-4 pt-3">
+          <label className="block text-sm text-ink-700">
+            Behavior
+            <select
+              value={behavior}
+              onChange={(e) => setBehavior(e.target.value as Behavior)}
+              className="mt-1 block min-h-[44px] w-full rounded-lg border border-ink-200 bg-white px-3 text-sm"
+            >
+              <option value="book">Book directly</option>
+              <option value="consultation">Requires consultation</option>
+              <option value="handoff">Hand off to me</option>
+              <option value="hidden">Hidden from chat</option>
+            </select>
+          </label>
+
+          <label className="mt-3 block text-sm text-ink-700">
+            Aliases (comma-separated)
+            <input
+              value={aliases}
+              onChange={(e) => setAliases(e.target.value)}
+              placeholder="treatment, scalp"
+              className="mt-1 block min-h-[44px] w-full rounded-lg border border-ink-200 bg-white px-3 text-base sm:text-sm"
+            />
+          </label>
+
+          <label className="mt-3 block text-sm text-ink-700">
+            Chat description (optional)
+            <input
+              value={desc}
+              onChange={(e) => setDesc(e.target.value)}
+              placeholder="How the chat should describe this service"
+              className="mt-1 block min-h-[44px] w-full rounded-lg border border-ink-200 bg-white px-3 text-base sm:text-sm"
+            />
+          </label>
+
+          <div className="mt-4 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={save}
+              disabled={saving}
+              className="inline-flex min-h-[44px] items-center rounded-full bg-ink-900 px-5 text-sm font-medium text-cream-50 disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+            {saved && <span className="text-sm text-success">Saved ✓</span>}
+            {err && <span className="text-sm text-red-600">Error: {err}</span>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -486,7 +506,7 @@ function UnsupportedSection() {
           {rules.map((rule) => (
             <div
               key={rule.id}
-              className="flex items-center justify-between gap-3 rounded-lg border border-ink-100 bg-cream-50 px-3 py-2"
+              className="flex items-center justify-between gap-3 rounded-lg border border-ink-100 bg-cream-50 pl-3"
             >
               <span className="text-sm text-ink-800">
                 <code>{rule.trigger_term}</code> → {rule.response_type}
@@ -494,7 +514,7 @@ function UnsupportedSection() {
               <button
                 type="button"
                 onClick={() => remove(rule.id)}
-                className="text-sm text-red-600 hover:underline"
+                className="inline-flex min-h-[44px] items-center px-3 text-sm font-medium text-red-600"
               >
                 Remove
               </button>
@@ -506,39 +526,44 @@ function UnsupportedSection() {
         </div>
       )}
 
-      <div className="mt-4 flex flex-wrap items-end gap-2">
-        <label className="text-sm text-ink-700">
-          Term
-          <input
-            value={term}
-            onChange={(e) => setTerm(e.target.value)}
-            placeholder="bleach"
-            className="mt-1 block rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm"
-          />
-        </label>
-        <label className="text-sm text-ink-700">
-          Response
-          <select
-            value={responseType}
-            onChange={(e) =>
-              setResponseType(e.target.value as UnsupportedRule["response_type"])
-            }
-            className="mt-1 block rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm"
+      {/* Add form — stacks on mobile so inputs aren't cramped. */}
+      <div className="mt-4 space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <label className="block flex-1 text-sm text-ink-700">
+            Term
+            <input
+              value={term}
+              onChange={(e) => setTerm(e.target.value)}
+              placeholder="bleach"
+              className="mt-1 block min-h-[44px] w-full rounded-lg border border-ink-200 bg-white px-3 text-base sm:text-sm"
+            />
+          </label>
+          <label className="block text-sm text-ink-700 sm:w-44">
+            Response
+            <select
+              value={responseType}
+              onChange={(e) =>
+                setResponseType(e.target.value as UnsupportedRule["response_type"])
+              }
+              className="mt-1 block min-h-[44px] w-full rounded-lg border border-ink-200 bg-white px-3 text-sm"
+            >
+              <option value="handoff">Handoff</option>
+              <option value="not_offered">Not offered</option>
+              <option value="consultation">Consultation</option>
+            </select>
+          </label>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={add}
+            disabled={adding}
+            className="inline-flex min-h-[44px] items-center rounded-full bg-ink-900 px-5 text-sm font-medium text-cream-50 disabled:opacity-50"
           >
-            <option value="handoff">Handoff</option>
-            <option value="not_offered">Not offered</option>
-            <option value="consultation">Consultation</option>
-          </select>
-        </label>
-        <button
-          type="button"
-          onClick={add}
-          disabled={adding}
-          className="rounded-full bg-ink-900 px-4 py-2 text-sm font-medium text-cream-50 disabled:opacity-50"
-        >
-          {adding ? "Adding…" : "Add rule"}
-        </button>
-        {err && <span className="text-sm text-red-600">Error: {err}</span>}
+            {adding ? "Adding…" : "Add rule"}
+          </button>
+          {err && <span className="text-sm text-red-600">Error: {err}</span>}
+        </div>
       </div>
     </Section>
   );
@@ -610,30 +635,28 @@ function HandoffEmailSection() {
             Notification email
             <input
               type="email"
+              inputMode="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
-              className="mt-1 w-full max-w-sm rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm"
+              className="mt-1 block min-h-[44px] w-full rounded-lg border border-ink-200 bg-white px-3 text-base sm:max-w-sm sm:text-sm"
             />
           </label>
-          <label className="flex items-center gap-2 text-sm text-ink-700">
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={(e) => setEnabled(e.target.checked)}
-            />
-            Send me an email for each handoff
-          </label>
+          <Toggle
+            checked={enabled}
+            onChange={setEnabled}
+            label="Send me an email for each handoff"
+          />
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={save}
               disabled={saving}
-              className="rounded-full bg-ink-900 px-4 py-2 text-sm font-medium text-cream-50 disabled:opacity-50"
+              className="inline-flex min-h-[44px] items-center rounded-full bg-ink-900 px-5 text-sm font-medium text-cream-50 disabled:opacity-50"
             >
               {saving ? "Saving…" : "Save"}
             </button>
-            {saved && <span className="text-sm text-success">Saved</span>}
+            {saved && <span className="text-sm text-success">Saved ✓</span>}
             {err && <span className="text-sm text-red-600">Error: {err}</span>}
           </div>
         </div>
@@ -660,5 +683,45 @@ function Section({
       </h2>
       {children}
     </section>
+  );
+}
+
+/**
+ * Mobile-friendly toggle switch. 44px+ tap area, clear on/off — replaces the
+ * tiny native checkbox that was hard to hit on a phone.
+ */
+function Toggle({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+      className="inline-flex min-h-[44px] items-center gap-2 px-1"
+    >
+      <span
+        className={cn(
+          "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
+          checked ? "bg-success" : "bg-ink-200"
+        )}
+      >
+        <span
+          className={cn(
+            "inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform",
+            checked ? "translate-x-[22px]" : "translate-x-0.5"
+          )}
+        />
+      </span>
+      <span className="text-sm text-ink-700">{label}</span>
+    </button>
   );
 }

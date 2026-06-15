@@ -202,22 +202,22 @@ export default function DashboardPage() {
       : null;
 
   const headerRight = (
-    <nav className="flex items-center gap-1 text-sm">
-      <Link href="/dashboard/services" className="inline-flex min-h-[40px] items-center rounded-full px-3.5 py-2 text-sm text-ink-700 hover:bg-cream-100">
+    <nav className="flex items-center gap-0.5 text-sm sm:gap-1">
+      <Link href="/dashboard/services" className="inline-flex min-h-[44px] items-center rounded-full px-3 text-sm text-ink-700 hover:bg-cream-100">
         Settings
       </Link>
       <a
         href={status?.slug ? `/book/${status.slug}` : "/shen"}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex min-h-[40px] items-center rounded-full bg-cream-100 px-3.5 py-2 text-sm text-ink-700 hover:bg-cream-200"
+        className="inline-flex min-h-[44px] items-center rounded-full bg-cream-100 px-3 text-sm text-ink-700 hover:bg-cream-200"
       >
         Preview ↗
       </a>
       <button
         type="button"
         onClick={async () => { await supabase.auth.signOut(); router.replace("/"); }}
-        className="inline-flex min-h-[40px] items-center rounded-full px-3.5 py-2 text-sm text-ink-500 hover:bg-cream-100 hover:text-ink-900"
+        className="inline-flex min-h-[44px] items-center rounded-full px-3 text-sm text-ink-500 hover:bg-cream-100 hover:text-ink-900"
       >
         Sign out
       </button>
@@ -315,7 +315,19 @@ export default function DashboardPage() {
             <h2 className="mb-3 font-display text-xl font-medium text-ink-900">Quick replies</h2>
             <p className="mb-3 text-sm text-ink-500">Tap copy, then paste into any DM.</p>
             <div className="space-y-2">
-              {QUICK_REPLIES.map((qr) => <QuickReplyCard key={qr.id} reply={qr} />)}
+              {QUICK_REPLIES.map((qr) => {
+                // Replace the placeholder booking URL with this provider's
+                // REAL link so copied quick-replies point at the live page.
+                const realLink = bookingUrl
+                  ? bookingUrl.replace(/^https?:\/\//, "")
+                  : null;
+                const body = realLink
+                  ? qr.body.replace(/book\.kasa\.app\/shen/g, realLink)
+                  : qr.body;
+                return (
+                  <QuickReplyCard key={qr.id} reply={{ ...qr, body }} />
+                );
+              })}
             </div>
           </section>
         </div>
