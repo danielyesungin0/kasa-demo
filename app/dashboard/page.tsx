@@ -316,13 +316,17 @@ export default function DashboardPage() {
             <p className="mb-3 text-sm text-ink-500">Tap copy, then paste into any DM.</p>
             <div className="space-y-2">
               {QUICK_REPLIES.map((qr) => {
-                // Replace the placeholder booking URL with this provider's
-                // REAL link so copied quick-replies point at the live page.
-                const realLink = bookingUrl
-                  ? bookingUrl.replace(/^https?:\/\//, "")
+                // Replace the placeholder URL with this provider's REAL link.
+                // Keep the full https:// prefix so messaging apps (iMessage,
+                // WhatsApp, Instagram, etc.) auto-linkify it when pasted — a
+                // bare domain often isn't turned into a tappable link.
+                const fullLink = bookingUrl
+                  ? bookingUrl.startsWith("http")
+                    ? bookingUrl
+                    : `https://${bookingUrl}`
                   : null;
-                const body = realLink
-                  ? qr.body.replace(/book\.kasa\.app\/shen/g, realLink)
+                const body = fullLink
+                  ? qr.body.replace(/book\.kasa\.app\/shen/g, fullLink)
                   : qr.body;
                 return (
                   <QuickReplyCard key={qr.id} reply={{ ...qr, body }} />
