@@ -4067,6 +4067,13 @@ export function ClientBookingPage({
                 return false;
               }
             }}
+            onMessageStylist={() => {
+              // Booking failed (e.g. Square couldn't place it) — drop into the
+              // handoff flow so the client can reach the stylist directly.
+              setStage("home");
+              setAssistantOpen(true);
+              handleOpenHandoff();
+            }}
           />
         )}
 
@@ -7971,6 +7978,7 @@ function ReviewStage({
   onChangeTime,
   onChangeDetails,
   onConfirm,
+  onMessageStylist,
 }: {
   service: Service;
   additionalServices: Service[];
@@ -7984,6 +7992,9 @@ function ReviewStage({
   // Resolves true on success (parent already transitioned to confirmed),
   // false on failure (we show the error inline and let the user retry).
   onConfirm: () => Promise<boolean>;
+  // Escape hatch when a booking fails — opens the handoff flow so the client
+  // can message the stylist directly instead of being stuck.
+  onMessageStylist?: () => void;
 }) {
   const [submitting, setSubmitting] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
@@ -8043,7 +8054,16 @@ function ReviewStage({
           role="alert"
           className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"
         >
-          {bookingError}
+          <p>{bookingError}</p>
+          {onMessageStylist && (
+            <button
+              type="button"
+              onClick={onMessageStylist}
+              className="mt-2 inline-flex min-h-[44px] items-center rounded-full border border-red-300 bg-white px-4 text-sm font-medium text-red-700"
+            >
+              Message {stylistName} instead
+            </button>
+          )}
         </div>
       )}
 

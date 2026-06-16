@@ -35,6 +35,8 @@ type StylistStatus = {
   teamMemberName: string | null;
   lastSyncedAt: string | null;
   syncedServicesCount: number;
+  squareEnvironment?: "production" | "sandbox";
+  bookingMode?: "live" | "test" | "legacy";
 };
 
 function EmptyState({ text }: { text: string }) {
@@ -232,6 +234,34 @@ export default function DashboardPage() {
           Your booking dashboard
         </h1>
       </div>
+
+      {/* Booking-mode banner — makes it unambiguous whether client bookings
+          hit Shen's real Square calendar or are in safe test mode. */}
+      {status?.bookingMode === "live" && (
+        <div
+          role="status"
+          className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-success/40 bg-success-soft px-4 py-3 text-sm text-success"
+        >
+          <span className="h-2 w-2 rounded-full bg-success" />
+          <span className="font-medium">Live bookings on.</span>
+          <span className="text-ink-700">
+            Client bookings create real appointments in your Square calendar.
+          </span>
+        </div>
+      )}
+      {status?.bookingMode === "test" && (
+        <div
+          role="status"
+          className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-yellow-300 bg-yellow-50 px-4 py-3 text-sm text-yellow-900"
+        >
+          <span className="h-2 w-2 rounded-full bg-yellow-500" />
+          <span className="font-medium">Safe test mode.</span>
+          <span>
+            Bookings are recorded but do NOT create Square appointments. Turn on
+            live bookings before going live with clients.
+          </span>
+        </div>
+      )}
 
       {squareTokenStale && (
         <div

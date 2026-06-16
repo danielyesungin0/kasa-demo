@@ -85,5 +85,15 @@ export async function GET() {
     teamMemberName: stylist.square_team_member_name ?? null,
     lastSyncedAt: stylist.last_synced_at ?? null,
     syncedServicesCount,
+    // Environment flags so the dashboard can clearly show whether bookings
+    // are live (hit Shen's real calendar) or in safe test mode.
+    squareEnvironment:
+      process.env.SQUARE_ENVIRONMENT === "production" ? "production" : "sandbox",
+    bookingMode:
+      process.env.SQUARE_BOOKING_ENABLED === "true"
+        ? "live"
+        : process.env.SQUARE_BOOKING_ENABLED === "false"
+          ? "test"
+          : "legacy",
   });
 }

@@ -108,45 +108,121 @@ export async function POST(request: NextRequest) {
   const startsAt = new Date(slotStartAt);
   const endsAt = new Date(startsAt.getTime() + durationMinutes * 60 * 1000);
 
-  // Attempt Square CreateBooking if fully connected.
-  // Refreshes the token if within 48 hours of expiry so we never hand a
-  // near-dead token to Square. If the refresh fails, we fall through to
-  // Supabase-only (existing behavior) instead of failing the booking.
+  // Booking mode (SQUARE_BOOKING_ENABLED):
+  //   "true"   → LIVE: a Square Appointments booking is REQUIRED. If Square
+  //              can't create it, the booking FAILS (no confirmed Supabase
+  //              row, clear error to the client). No silent Supabase-only.
+  //   "false"  → SAFE TEST: skip Square entirely, save to Supabase only.
+  //              Zero calendar risk while testing the flow.
+  //   unset    → LEGACY: try Square, fall back to Supabase (pre-production
+  //              behavior, so current sandbox/dev testing is unaffected).
+  const bookingMode =
+    process.env.SQUARE_BOOKING_ENABLED === "true"
+      ? "live"
+      : process.env.SQUARE_BOOKING_ENABLED === "false"
+        ? "test"
+        : "legacy";
+
   let squareBookingId: string | null = null;
 
+  // ── Resolve Square readiness (token + location + team member + variation) ──
+  const catalog = (stylist.service_catalog ?? {}) as Record<string, any>;
+  const svcEntry = catalog[serviceId];
   const tokenResult = await ensureFreshSquareToken(stylist.id);
   const accessToken = tokenResult.ok ? tokenResult.accessToken : null;
-
-  if (
+  const squareReady = Boolean(
     accessToken &&
-    stylist.square_location_id &&
-    stylist.square_team_member_id
-  ) {
-    const catalog = (stylist.service_catalog ?? {}) as Record<string, any>;
-    const svcEntry = catalog[serviceId];
+      stylist.square_location_id &&
+      stylist.square_team_member_id &&
+      svcEntry?.squareVariationId
+  );
 
-    if (svcEntry?.squareVariationId) {
-      try {
-        squareBookingId = await createSquareBooking({
-          accessToken,
-          locationId: stylist.square_location_id,
-          teamMemberId: stylist.square_team_member_id,
-          serviceVariationId: svcEntry.squareVariationId,
-          durationMinutes,
-          startsAt,
-          clientName,
-          clientPhone,
-          clientEmail: clientEmail ?? null,
-          notes: notes ?? null,
-        });
-      } catch (err) {
-        // Log but don't fail — fall through to Supabase-only booking
-        console.error("Square CreateBooking failed (saving to Supabase only):", err);
-      }
+  // ── LIVE mode: Square is mandatory ─────────────────────────────────────────
+  if (bookingMode === "live") {
+    // Missing creds → cannot create a real appointment. Error BEFORE saving
+    // any confirmed row, so the client never thinks they booked.
+    if (!squareReady) {
+      console.error("Live booking: Square not ready (missing creds)", {
+        hasToken: Boolean(accessToken),
+        hasLocation: Boolean(stylist.square_location_id),
+        hasTeamMember: Boolean(stylist.square_team_member_id),
+        hasVariation: Boolean(svcEntry?.squareVariationId),
+      });
+      return NextResponse.json(
+        { error: "square_not_ready" },
+        { status: 502 }
+      );
+    }
+
+    try {
+      squareBookingId = await createSquareBooking({
+        accessToken: accessToken!,
+        locationId: stylist.square_location_id!,
+        teamMemberId: stylist.square_team_member_id!,
+        serviceVariationId: svcEntry.squareVariationId,
+        durationMinutes,
+        startsAt,
+        clientName,
+        clientPhone,
+        clientEmail: clientEmail ?? null,
+        notes: notes ?? null,
+      });
+    } catch (err) {
+      console.error("Live booking: Square CreateBooking failed:", err);
+      squareBookingId = null;
+    }
+
+    // Square failed → do NOT confirm. Write a clearly-marked diagnostic row
+    // (status='failed'), which availability ignores (it only blocks
+    // confirmed/pending), then return an error so the client shows a clear
+    // failure instead of a fake confirmation.
+    if (!squareBookingId) {
+      await admin.from("bookings").insert({
+        stylist_id: stylist.id,
+        square_booking_id: null,
+        customer_name: clientName,
+        customer_phone: clientPhone,
+        customer_email: clientEmail ?? null,
+        service_id: serviceId,
+        service_name: serviceName,
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+        status: "failed",
+        notes: notes ?? null,
+      });
+      return NextResponse.json(
+        { error: "square_booking_failed" },
+        { status: 502 }
+      );
+    }
+    // Square succeeded — fall through to save the confirmed Supabase reference.
+  }
+
+  // ── LEGACY mode: try Square, fall back to Supabase (pre-production) ────────
+  if (bookingMode === "legacy" && squareReady) {
+    try {
+      squareBookingId = await createSquareBooking({
+        accessToken: accessToken!,
+        locationId: stylist.square_location_id!,
+        teamMemberId: stylist.square_team_member_id!,
+        serviceVariationId: svcEntry.squareVariationId,
+        durationMinutes,
+        startsAt,
+        clientName,
+        clientPhone,
+        clientEmail: clientEmail ?? null,
+        notes: notes ?? null,
+      });
+    } catch (err) {
+      console.error("Legacy booking: Square CreateBooking failed (Supabase-only):", err);
     }
   }
 
-  // Save to Supabase bookings table
+  // ── TEST mode: no Square call at all (Supabase-only, zero calendar risk) ───
+  // (squareBookingId stays null; we just save the Supabase record below.)
+
+  // Save the confirmed booking to Supabase. In live mode we only reach here
+  // after Square succeeded (squareBookingId is non-null).
   const { data: booking, error: insertErr } = await admin
     .from("bookings")
     .insert({
@@ -193,7 +269,13 @@ export async function POST(request: NextRequest) {
     bookingId: booking.id,
     squareBookingId,
     status: "confirmed",
-    source: squareBookingId ? "square" : "supabase_only",
+    // "square" = on Shen's calendar; "test_no_square" = safe-test mode,
+    // intentionally not on the calendar; "supabase_only" = legacy fallback.
+    source: squareBookingId
+      ? "square"
+      : bookingMode === "test"
+        ? "test_no_square"
+        : "supabase_only",
   });
 }
 
