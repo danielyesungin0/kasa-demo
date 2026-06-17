@@ -17,6 +17,21 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/setup?square_error=not_authed", base));
   }
 
+  // Optional preferred slug, carried from the signup link (e.g.
+  // /setup?slug=shen → "Connect Square" forwards ?slug=). When present and
+  // free, the callback uses it as the provider's booking URL; otherwise it
+  // auto-derives one from the Square business name. This is how a provider can
+  // be given a specific URL at scale without any manual SQL.
+  const preferredSlug = request.nextUrl.searchParams.get("slug")?.trim() || null;
+
+  // OAuth `state` carries whose row to write. Back-compat: when there's no
+  // preferred slug we send the bare user id (the original format); otherwise we
+  // send JSON so the callback can read both the user id and the preferred slug.
+  // The callback parses both shapes.
+  const state = preferredSlug
+    ? JSON.stringify({ u: authData.user.id, s: preferredSlug })
+    : authData.user.id;
+
   const base = `${SQUARE_BASE}/oauth2/authorize`;
   const params = new URLSearchParams({
     client_id: process.env.SQUARE_APPLICATION_ID!,
@@ -32,7 +47,7 @@ export async function GET(request: NextRequest) {
       "CUSTOMERS_READ",
       "CUSTOMERS_WRITE",
     ].join(" "),
-    state: authData.user.id,
+    state,
   });
 
   return NextResponse.redirect(`${base}?${params.toString()}`);

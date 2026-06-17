@@ -138,6 +138,9 @@ function SetupPageInner() {
   // ── URL params (from Square OAuth callback) ───────────────────────────────
   const searchParams = useSearchParams();
   const squareError = searchParams.get("square_error");
+  // Optional preferred booking slug from the signup link (?slug=shen). Forwarded
+  // to the Square connect URL so the provider gets that booking URL if it's free.
+  const preferredSlug = searchParams.get("slug")?.trim() || null;
 
   // ── Setup flow state ──────────────────────────────────────────────────────
   const [step, setStep] = useState(1);
@@ -224,6 +227,7 @@ function SetupPageInner() {
           <StepConnect
             connected={squareConnected}
             squareError={squareError}
+            preferredSlug={preferredSlug}
             onNext={() => setStep(2)}
           />
         )}
@@ -243,7 +247,22 @@ function SetupPageInner() {
             availability={availability}
             onChange={setAvailability}
             onBack={() => setStep(2)}
-            onNext={() => setStep(4)}
+            onNext={() => {
+              // Persist the chosen hours to stylist_availability so /book/<slug>
+              // shows real slots. Fire-and-forget: a failure here falls back to
+              // the default availability the callback already seeded on connect,
+              // so the provider is never left with an empty calendar.
+              void fetch("/api/provider/availability", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  days: availability.days,
+                  startLabel: availability.startLabel,
+                  endLabel: availability.endLabel,
+                }),
+              }).catch(() => {});
+              setStep(4);
+            }}
           />
         )}
 
@@ -385,12 +404,19 @@ function SignInScreen({
 function StepConnect({
   connected,
   squareError,
+  preferredSlug,
   onNext,
 }: {
   connected: boolean;
   squareError: string | null;
+  preferredSlug: string | null;
   onNext: () => void;
 }) {
+  // Forward the preferred slug to the connect endpoint so the provider's
+  // booking URL can be that slug (when free). No slug → auto-derived from Square.
+  const connectHref = preferredSlug
+    ? `/api/square/connect?slug=${encodeURIComponent(preferredSlug)}`
+    : "/api/square/connect";
   const errorMessages: Record<string, string> = {
     missing_code: "Square didn't return an authorization code. Please try again.",
     no_user: "Your session expired. Please sign in again.",
@@ -419,7 +445,7 @@ function StepConnect({
 
         {!connected ? (
           <a
-            href="/api/square/connect"
+            href={connectHref}
             className="group flex w-full items-center justify-between gap-3 rounded-2xl border border-ink-200 bg-cream-50 p-5 text-left transition hover:border-ink-300 hover:shadow-soft active:scale-[0.99]"
           >
             <div className="flex items-center gap-4">

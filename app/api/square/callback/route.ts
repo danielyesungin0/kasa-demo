@@ -2,6 +2,9 @@ import { type NextRequest, NextResponse } from "next/server";
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/server";
 import { encryptSecret } from "@/lib/crypto";
 import { SQUARE_BASE } from "@/lib/square/config";
+import { deriveSlugBase, generateUniqueSlug } from "@/lib/stylists/slug";
+import { syncProviderServices } from "@/lib/square/sync-services";
+import { seedDefaultAvailabilityIfEmpty } from "@/lib/stylists/availability-seed";
 
 /**
  * App URL for OAuth redirects. Prefers NEXT_PUBLIC_APP_URL, falls back to
@@ -20,13 +23,32 @@ export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const code = searchParams.get("code");
   const errorParam = searchParams.get("error");
-  const userId = searchParams.get("state");
+  const stateParam = searchParams.get("state");
 
   if (errorParam) {
     return NextResponse.redirect(`${APP_URL}/setup?square_error=${encodeURIComponent(errorParam)}`);
   }
   if (!code) {
     return NextResponse.redirect(`${APP_URL}/setup?square_error=missing_code`);
+  }
+  if (!stateParam) {
+    return NextResponse.redirect(`${APP_URL}/setup?square_error=no_user`);
+  }
+
+  // `state` is either the bare user id (legacy/no-preferred-slug) or JSON
+  // { u: userId, s: preferredSlug } when the signup link carried a slug.
+  let userId: string;
+  let preferredSlug: string | null = null;
+  if (stateParam.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(stateParam) as { u?: string; s?: string };
+      userId = parsed.u ?? "";
+      preferredSlug = parsed.s?.trim() || null;
+    } catch {
+      userId = "";
+    }
+  } else {
+    userId = stateParam;
   }
   if (!userId) {
     return NextResponse.redirect(`${APP_URL}/setup?square_error=no_user`);
@@ -152,30 +174,83 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // ── 4. Upsert everything into stylists table ──────────────────────────────
+  // ── 4. Resolve the booking slug ────────────────────────────────────────────
+  // Self-serve rule: assign a slug ONLY when this provider doesn't already have
+  // one. Reconnecting never renames an existing slug — so live /book/<slug>
+  // links can never break. Prefer the signup-link slug, then the Square
+  // business / team-member name; dedupe against existing slugs.
+  const { data: existingRow } = await admin
+    .from("stylists")
+    .select("id, slug")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  let slugToWrite: string | undefined;
+  if (!existingRow?.slug) {
+    const base = deriveSlugBase([
+      preferredSlug,
+      businessName,
+      teamMemberDisplayName,
+    ]);
+    slugToWrite = await generateUniqueSlug(base, existingRow?.id);
+  }
+
+  // ── 5. Upsert everything into stylists table ──────────────────────────────
+  const upsertPayload: Record<string, unknown> = {
+    user_id: userId,
+    email: userEmail,
+    // Encrypted at rest — must round-trip through decryptSecret() on read.
+    square_access_token: encryptSecret(accessToken),
+    square_refresh_token: encryptSecret(tokenData.refresh_token ?? null),
+    square_merchant_id: tokenData.merchant_id ?? null,
+    square_token_expires_at: tokenData.expires_at ?? null,
+    square_location_id: locationId,
+    square_location_name: locationName,
+    square_business_name: businessName,
+    square_team_member_id: teamMemberId,
+    square_team_member_name: teamMemberDisplayName,
+  };
+  // Only set slug for a provider who doesn't have one yet (omitting the key
+  // means Postgres leaves any existing slug untouched on conflict).
+  if (slugToWrite) upsertPayload.slug = slugToWrite;
+
   const { error: upsertError } = await admin
     .from("stylists")
-    .upsert(
-      {
-        user_id: userId,
-        email: userEmail,
-        // Encrypted at rest — must round-trip through decryptSecret() on read.
-        square_access_token: encryptSecret(accessToken),
-        square_refresh_token: encryptSecret(tokenData.refresh_token ?? null),
-        square_merchant_id: tokenData.merchant_id ?? null,
-        square_token_expires_at: tokenData.expires_at ?? null,
-        square_location_id: locationId,
-        square_location_name: locationName,
-        square_business_name: businessName,
-        square_team_member_id: teamMemberId,
-        square_team_member_name: teamMemberDisplayName,
-      },
-      { onConflict: "user_id" }
-    );
+    .upsert(upsertPayload, { onConflict: "user_id" });
 
   if (upsertError) {
     console.error("Supabase upsert error:", upsertError);
     return NextResponse.redirect(`${APP_URL}/setup?square_error=db_save_failed`);
+  }
+
+  // ── 6. Auto-provision so the provider can take bookings immediately ────────
+  // Re-read to get the row id (and its now-current slug). Both steps below are
+  // NON-FATAL: a hiccup here must not block a successful connection — the
+  // dashboard re-sync button and the onboarding availability step are fallbacks.
+  const { data: provisionRow } = await admin
+    .from("stylists")
+    .select("id")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (provisionRow?.id) {
+    // (a) Persist her real services (provider_services + service_catalog).
+    try {
+      const sync = await syncProviderServices(provisionRow.id, accessToken);
+      if (!sync.ok) {
+        console.error("Connect-time service sync failed:", sync.error);
+      }
+    } catch (err) {
+      console.error("Connect-time service sync threw:", err);
+    }
+
+    // (b) Seed default availability ONLY if she has none, so /book/<slug>
+    //     never shows an empty calendar. She can refine it in onboarding.
+    try {
+      await seedDefaultAvailabilityIfEmpty(provisionRow.id);
+    } catch (err) {
+      console.error("Connect-time availability seed threw:", err);
+    }
   }
 
   return NextResponse.redirect(`${APP_URL}/setup?connected=true`);
