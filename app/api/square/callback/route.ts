@@ -214,6 +214,14 @@ export async function GET(request: NextRequest) {
   // means Postgres leaves any existing slug untouched on conflict).
   if (slugToWrite) upsertPayload.slug = slugToWrite;
 
+  // Publish the booking page on first connect. `published` defaults to false
+  // (migration 002) and /book/[slug] gates on it, so without this a brand-new
+  // provider's link would 404 until someone flipped it manually in SQL. We set
+  // it only when assigning a slug for the first time — i.e. exactly when the
+  // provider gets their booking URL — so this never re-publishes (or fights) a
+  // provider who later chooses to unpublish.
+  if (slugToWrite) upsertPayload.published = true;
+
   const { error: upsertError } = await admin
     .from("stylists")
     .upsert(upsertPayload, { onConflict: "user_id" });
