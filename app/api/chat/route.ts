@@ -5,6 +5,7 @@ import { resolveStylist } from "@/lib/stylists/resolve";
 import { SERVICES, STYLIST } from "@/lib/mock-data";
 import type { Service } from "@/lib/types";
 import { callAI, type AIResponse } from "@/lib/ai/provider";
+import { lastCallWasRateLimited } from "@/lib/ai/metrics";
 import {
   tryDeterministicAnswer,
   type FAQContext,
@@ -450,12 +451,23 @@ export async function POST(request: NextRequest) {
   }
 
   if (debug) console.log("[chat] ai unavailable and no deterministic match, returning safe fallback");
+  // Distinguish a transient rate-limit (free-tier AI temporarily busy) from a
+  // genuine "didn't understand". On a rate limit we say so plainly and offer a
+  // real path forward — never a raw API error, never a dead end.
+  const wasRateLimited = lastCallWasRateLimited();
+  const fallbackReply = wasRateLimited
+    ? `Sorry — the assistant is getting a lot of requests right now and needs a moment. Please try again in a few seconds. In the meantime you can tap "Browse all services" to see everything ${stylistName} offers, or ask to message ${stylistName} directly.`
+    : `I can still help with booking, services, and basic questions. Tell me what you're looking for, or tap "Browse all services" to see everything ${stylistName} offers.`;
   const fallback: ChatResponseBody = {
-    reply: `I can still help with booking, services, and basic questions. Tell me what you're looking for, or tap "Browse all services" to see everything ${stylistName} offers.`,
+    reply: fallbackReply,
     intent: "unknown",
     recommendedServiceIds: [],
-    needsHumanHandoff: false,
-    handoffSummary: null,
+    // Offer the human escape hatch when the AI is rate-limited, so a client who
+    // can't get through to the assistant still has a way to reach the provider.
+    needsHumanHandoff: wasRateLimited,
+    handoffSummary: wasRateLimited
+      ? `Client tried to chat while the assistant was temporarily unavailable (rate limited). They may want help booking with ${stylistName}.`
+      : null,
     confidence: 0,
     serviceQuery: null,
     timePreference: null,

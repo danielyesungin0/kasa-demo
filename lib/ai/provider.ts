@@ -16,6 +16,8 @@
  *     Never throws — the chat must never dead-end because Groq blinked.
  */
 
+import { recordAIRequest, recordAIOutcome } from "@/lib/ai/metrics";
+
 export type AIIntent =
   | "faq"
   | "service_guidance"
@@ -201,6 +203,9 @@ async function callGroq(
     });
   }
 
+  recordAIRequest();
+  const callStartedAt = Date.now();
+
   try {
     const controller = new AbortController();
     // 8 second cap — Groq is normally <500ms. If we're past 8s, fall back
@@ -233,6 +238,12 @@ async function callGroq(
         const text = await res.text().catch(() => "<unreadable>");
         console.log(`[ai] groq error ${res.status}:`, text.slice(0, 500));
       }
+      // 429 = free-tier rate limit. Recorded distinctly so the chat route can
+      // show a friendly "assistant is busy" message rather than a generic miss.
+      recordAIOutcome(
+        res.status === 429 ? "rate_limited" : "error",
+        Date.now() - callStartedAt
+      );
       return null;
     }
 
@@ -242,14 +253,23 @@ async function callGroq(
     const raw = data.choices?.[0]?.message?.content;
     if (!raw) {
       if (opts.debug) console.log("[ai] groq: empty content");
+      recordAIOutcome("error", Date.now() - callStartedAt);
       return null;
     }
 
     if (opts.debug) console.log("[ai] groq raw response:", raw.slice(0, 500));
 
-    return parseStructured(raw, opts);
+    const parsed = parseStructured(raw, opts);
+    // A non-null parse is a usable answer; a null parse is a content/shape
+    // failure (counts as an error, not a rate limit).
+    recordAIOutcome(parsed ? "success" : "error", Date.now() - callStartedAt);
+    return parsed;
   } catch (err) {
     if (opts.debug) console.log("[ai] groq fetch failed:", err);
+    // AbortController fires an AbortError on our 8s timeout.
+    const isAbort =
+      err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError");
+    recordAIOutcome(isAbort ? "timeout" : "error", Date.now() - callStartedAt);
     return null;
   }
 }
