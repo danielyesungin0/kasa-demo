@@ -533,7 +533,7 @@ const findService = findInCatalog;
 /* Time hint extraction (shared by book / refine / switch)                     */
 /* -------------------------------------------------------------------------- */
 
-function extractTimeHints(text: string): TimeHints {
+export function extractTimeHints(text: string): TimeHints {
   // Days of the week
   const days: string[] = [];
   for (const [keyword, day] of Object.entries(DAY_KEYWORDS)) {

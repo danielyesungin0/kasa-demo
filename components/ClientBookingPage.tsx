@@ -22,6 +22,7 @@ import { useAppointments } from "@/lib/appointments-store";
 import type { Appointment, Service, TimeSlot } from "@/lib/types";
 import {
   parseClientMessage,
+  extractTimeHints,
   getClarifyingQuestion,
   getRecommendedServices,
   getAssistantResponse,
@@ -1139,6 +1140,18 @@ export function ClientBookingPage({
       context.pendingFuzzy !== null ||
       context.pendingClarification !== null;
     if (!inPendingDialog) {
+      // CONTINUITY: capture any day/time the user mentioned BEFORE the
+      // unsupported / multi-person guards short-circuit to a handoff. Without
+      // this, "balayage next Tuesday at 5pm" loses "next Tuesday at 5pm" the
+      // moment it's flagged unsupported, so a follow-up "haircut instead" has
+      // nothing to fall back to. We persist the time signal into context so the
+      // existing merge logic (handleBookOrSwitch) reuses it on the next turn.
+      // Provider-agnostic: operates purely on extracted time hints.
+      const earlyHints = extractTimeHints(trimmed);
+      if (hintsHaveSignal(earlyHints)) {
+        patchContext({ lastIntentTimeHints: earlyHints });
+      }
+
       const detManageAction = detectManageIntent(trimmed);
       if (detManageAction) {
         enterManageMode(detManageAction);
