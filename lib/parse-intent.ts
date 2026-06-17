@@ -541,13 +541,22 @@ export function extractTimeHints(text: string): TimeHints {
     if (re.test(text) && !days.includes(day)) days.push(day);
   }
 
-  // Day of month — "the 12th", "12th", "on the 12"
+  // Day of month — "the 12th", "12th", "on the 12th", "on the 12".
+  // IMPORTANT: a bare number is only a day-of-month when it carries explicit
+  // date context — an ordinal suffix (12th) OR a "the"/"on the" prefix. A bare
+  // "5" (as in "at 5") is a CLOCK TIME, not the 5th of the month, and must not
+  // be captured here. We also never treat a number right after "at" as a date.
   let dayOfMonth: number | null = null;
   const dayMatch = text.match(
-    /\b(?:on\s+)?(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)?\b/
+    // (a) "the 12" / "on the 12" (optional ordinal), or (b) "12th/1st/.." ordinal.
+    /\b(?:on\s+)?the\s+(\d{1,2})(?:st|nd|rd|th)?\b|\b(\d{1,2})(?:st|nd|rd|th)\b/
   );
   if (dayMatch) {
-    const n = parseInt(dayMatch[1], 10);
+    const raw = dayMatch[1] ?? dayMatch[2];
+    // Guard: ignore if this number is immediately preceded by "at" (a time cue),
+    // e.g. "at the 5"-style misreads — defensive, the regex already excludes
+    // bare "at 5".
+    const n = parseInt(raw, 10);
     if (n >= 1 && n <= 31) dayOfMonth = n;
   }
 
@@ -639,6 +648,26 @@ export function extractTimeHints(text: string): TimeHints {
       const h = parseInt(bare[1], 10);
       const m = parseInt(bare[2], 10);
       if (h <= 23 && m <= 59) hour24 = h + m / 60;
+    } else {
+      // Bare hour after a time cue — "at 5", "around 3", "by 11". No am/pm and
+      // no colon, so "5" here is a CLOCK TIME (the day-of-month parser above
+      // deliberately ignores it). Apply a business-hours reading: 1–7 → PM
+      // (afternoon/evening appointments), 8–11 → AM, 12 → noon. This makes
+      // "next Tuesday at 5" mean 5pm, not the 5th.
+      const atHour = text.match(/\b(?:at|around|by|near)\s+(\d{1,2})(?:\s|$|[.,!?])/);
+      if (atHour) {
+        let h = parseInt(atHour[1], 10);
+        if (h >= 1 && h <= 11) {
+          // If the user already said "morning"/am, keep it as AM; otherwise the
+          // afternoon/evening assumption applies for the 1–7 range.
+          if (h >= 1 && h <= 7 && period !== "morning") h += 12; // 1–7 → 13–19 (PM)
+          hour24 = h;
+        } else if (h === 12) {
+          hour24 = 12; // noon
+        } else if (h >= 13 && h <= 23) {
+          hour24 = h; // already 24h
+        }
+      }
     }
   }
 
