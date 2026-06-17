@@ -1353,11 +1353,26 @@ export function ClientBookingPage({
       );
 
       if (converted) {
+        // CONTINUITY (AI path): if the user's CURRENT message carries no time
+        // signal, don't let the AI's timePreference (which can hallucinate a
+        // time, or echo a stale one) override what they actually said earlier.
+        // Strip it so handleBookOrSwitch's merge restores the real stored
+        // hints (context.lastIntentTimeHints) — e.g. "balayage next Tuesday 5"
+        // → "haircut instead" keeps Tuesday 5pm even via the AI route. When the
+        // message DOES state a time, we trust the conversion as-is.
+        let toDispatch = converted;
+        if (
+          (converted.kind === "book" || converted.kind === "switch_service") &&
+          !hintsHaveSignal(extractTimeHints(trimmed)) &&
+          hintsHaveSignal(context.lastIntentTimeHints)
+        ) {
+          toDispatch = { ...converted, timeHints: context.lastIntentTimeHints };
+        }
         // The deterministic executor takes it from here. We deliberately do
         // NOT also render the AI reply — the executor will emit its own
         // grounded ack ("Got it, here are some openings for next week...").
         // Otherwise the user sees two bot turns in a row.
-        dispatch(converted);
+        dispatch(toDispatch);
         return;
       }
 
