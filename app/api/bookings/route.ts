@@ -5,6 +5,7 @@ import { ensureFreshSquareToken } from "@/lib/square/ensure-fresh-token";
 import { sendBookingConfirmation } from "@/lib/email";
 import { SQUARE_BASE } from "@/lib/square/config";
 import { resolveStylist } from "@/lib/stylists/resolve";
+import { resolveBookingMode, isSquareReady } from "@/lib/bookings/mode";
 
 export async function GET() {
   // Authenticated stylist only — this endpoint returns customer PII (names,
@@ -116,12 +117,7 @@ export async function POST(request: NextRequest) {
   //              Zero calendar risk while testing the flow.
   //   unset    → LEGACY: try Square, fall back to Supabase (pre-production
   //              behavior, so current sandbox/dev testing is unaffected).
-  const bookingMode =
-    process.env.SQUARE_BOOKING_ENABLED === "true"
-      ? "live"
-      : process.env.SQUARE_BOOKING_ENABLED === "false"
-        ? "test"
-        : "legacy";
+  const bookingMode = resolveBookingMode(process.env.SQUARE_BOOKING_ENABLED);
 
   let squareBookingId: string | null = null;
 
@@ -130,12 +126,12 @@ export async function POST(request: NextRequest) {
   const svcEntry = catalog[serviceId];
   const tokenResult = await ensureFreshSquareToken(stylist.id);
   const accessToken = tokenResult.ok ? tokenResult.accessToken : null;
-  const squareReady = Boolean(
-    accessToken &&
-      stylist.square_location_id &&
-      stylist.square_team_member_id &&
-      svcEntry?.squareVariationId
-  );
+  const squareReady = isSquareReady({
+    accessToken,
+    locationId: stylist.square_location_id,
+    teamMemberId: stylist.square_team_member_id,
+    serviceVariationId: svcEntry?.squareVariationId,
+  });
 
   // ── LIVE mode: Square is mandatory ─────────────────────────────────────────
   if (bookingMode === "live") {
