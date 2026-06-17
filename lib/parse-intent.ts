@@ -1994,18 +1994,12 @@ export function filterSlotsByRefinement(
       nonWorkingDay = true;
     }
   }
+  // PRECEDENCE: explicit dateKey, then a named WEEKDAY, then bare day-of-month.
+  // A named weekday ("Tuesday") is unambiguous and must win over a bare
+  // day-of-month — this is the resolver-side guard against the "at 5" → "the
+  // 5th" class of bug (a Sunday-the-5th slot must never outrank a stated Tue).
   if (timeHints.dateKey) {
     resolvedAnchor = timeHints.dateKey;
-  } else if (timeHints.dayOfMonth !== null) {
-    const match = allSlots.find((s) => s.dayOfMonth === timeHints.dayOfMonth);
-    if (match) {
-      resolvedAnchor = match.dateKey;
-    } else {
-      // Synthesize the anchor in the demo month (May 2026) so fallback fires
-      const dd = timeHints.dayOfMonth.toString().padStart(2, "0");
-      resolvedAnchor = `2026-05-${dd}`;
-      anchorIsSynthetic = true;
-    }
   } else if (timeHints.days.length > 0) {
     const dayName = timeHints.days[0];
     const match = allSlots.find((s) => s.dayLabel === dayName);
@@ -2038,6 +2032,16 @@ export function filterSlotsByRefinement(
       } else {
         resolvedAnchor = null;
       }
+    }
+  } else if (timeHints.dayOfMonth !== null) {
+    // No weekday named — a genuine bare day-of-month ("the 12th").
+    const match = allSlots.find((s) => s.dayOfMonth === timeHints.dayOfMonth);
+    if (match) {
+      resolvedAnchor = match.dateKey;
+    } else {
+      const dd = timeHints.dayOfMonth.toString().padStart(2, "0");
+      resolvedAnchor = `2026-05-${dd}`;
+      anchorIsSynthetic = true;
     }
   } else {
     resolvedAnchor = anchorDateKey ?? context.lastAnchorDateKey;

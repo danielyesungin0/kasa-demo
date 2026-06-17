@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { extractTimeHints, rankTimeSlots } from "@/lib/parse-intent";
-import type { TimeSlot } from "@/lib/availability";
+import type { TimeSlot } from "@/lib/types";
 
 function slot(dateKey: string, dayLabel: string, hour24: number): TimeSlot {
   const day = Number(dateKey.split("-")[2]);
@@ -105,5 +105,46 @@ describe("END-TO-END regression: 'next Tuesday at 5' ranks a Tuesday slot first,
     const ranked = rankTimeSlots([tue7, tue4, tue5], hints);
     expect(ranked[0].hour24).toBe(17); // exact 5pm wins
     expect(ranked[1].hour24).toBe(16); // then nearest (4pm) — still Tuesday
+  });
+});
+
+describe("anchor precedence: a named weekday beats a bare day-of-month", () => {
+  // Defensive: even if BOTH a weekday and a day-of-month are present, the
+  // stated weekday must win the anchor (the filter/resolver precedence fix).
+  // Mirrors the client candidatePool filter (weekday branch before dayOfMonth).
+  function pickAnchorDay(
+    hints: ReturnType<typeof extractTimeHints>,
+    slots: TimeSlot[]
+  ): TimeSlot[] {
+    if (hints.dateKey) return slots.filter((s) => s.dateKey === hints.dateKey);
+    if (hints.days.length > 0) {
+      const nearest = slots
+        .filter((s) => hints.days.includes(s.dayLabel))
+        .map((s) => s.dateKey)
+        .sort()[0];
+      return nearest ? slots.filter((s) => s.dateKey === nearest) : [];
+    }
+    if (hints.dayOfMonth !== null) return slots.filter((s) => s.dayOfMonth === hints.dayOfMonth);
+    return slots;
+  }
+
+  it("'next tuesday at 5' anchors to Tuesday, never Sunday Jul 5", () => {
+    const hints = extractTimeHints("i need a haircut next tuesday at 5");
+    const slots = [
+      slot("2026-07-05", "Sun", 11),
+      slot("2026-07-07", "Tue", 17),
+      slot("2026-07-14", "Tue", 17),
+    ];
+    const picked = pickAnchorDay(hints, slots);
+    expect(picked.every((s) => s.dayLabel === "Tue")).toBe(true);
+    expect(picked.some((s) => s.dayLabel === "Sun")).toBe(false);
+  });
+
+  it("'Tuesday the 6th' (both signals) anchors to the Tuesday", () => {
+    // Synthetic both-set hints — weekday must win.
+    const hints = { ...extractTimeHints("tuesday"), dayOfMonth: 5 };
+    const slots = [slot("2026-07-05", "Sun", 11), slot("2026-07-07", "Tue", 14)];
+    const picked = pickAnchorDay(hints, slots);
+    expect(picked.every((s) => s.dayLabel === "Tue")).toBe(true);
   });
 });

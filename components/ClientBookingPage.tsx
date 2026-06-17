@@ -1921,13 +1921,13 @@ export function ClientBookingPage({
       }
 
       // Then narrow by specific day/date references.
+      // PRECEDENCE: an explicit weekday ("Tuesday") wins over a bare
+      // day-of-month. A stated weekday is unambiguous; day-of-month is the
+      // weaker signal (and historically the source of the "at 5" → "the 5th"
+      // confusion). Only fall to day-of-month when NO weekday was named.
       if (intent.timeHints.dateKey) {
         candidatePool = candidatePool.filter(
           (s) => s.dateKey === intent.timeHints.dateKey
-        );
-      } else if (intent.timeHints.dayOfMonth !== null) {
-        candidatePool = candidatePool.filter(
-          (s) => s.dayOfMonth === intent.timeHints.dayOfMonth
         );
       } else if (intent.timeHints.days.length > 0) {
         // Day-of-week. If we ALSO had a weekShift, candidatePool is already
@@ -1956,6 +1956,11 @@ export function ClientBookingPage({
             }
           }
         }
+      } else if (intent.timeHints.dayOfMonth !== null) {
+        // No weekday named, but a genuine day-of-month ("the 12th") — filter to it.
+        candidatePool = candidatePool.filter(
+          (s) => s.dayOfMonth === intent.timeHints.dayOfMonth
+        );
       }
 
       // Rank the constrained pool by hour-proximity etc.
@@ -2017,7 +2022,9 @@ export function ClientBookingPage({
     if (hints.relative === "today") parts.push("today");
     else if (hints.relative === "tomorrow") parts.push("tomorrow");
     if (hints.days.length > 0) parts.push(hints.days[0]);
-    if (hints.dayOfMonth !== null) parts.push(`the ${hints.dayOfMonth}th`);
+    // Only mention a day-of-month when NO weekday was named — matches the
+    // filter precedence (weekday wins). Prevents "Tue the 5th" contradictions.
+    else if (hints.dayOfMonth !== null) parts.push(`the ${hints.dayOfMonth}th`);
     if (hints.period === "morning") parts.push("morning");
     if (hints.period === "afternoon") parts.push("afternoon");
     if (hints.period === "evening") parts.push("evening");
