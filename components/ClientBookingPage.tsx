@@ -6748,7 +6748,7 @@ function AssistantBlock(props: HomeProps) {
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium leading-tight text-ink-900">
-              {props.stylistName}&rsquo;s booking helper
+              {props.stylistName}
             </p>
             {/* Hide once the conversation starts — the hint is no longer
                 needed and the buttons on the right need the space. */}
