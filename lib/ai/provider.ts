@@ -692,6 +692,13 @@ CATEGORY / BROAD QUESTIONS — IMPORTANT (do not give a generic yes/no):
 - NEVER answer a category question with a bare "Yes, we offer treatments." Always enumerate the actual matching service names from the list.
 
 Time extraction rules (very important — be precise, don't guess):
+- LANGUAGE OF STRUCTURED FIELDS: your "reply" is in the client's language, but the
+  structured fields are INTERNAL and MUST use English enum values only. NEVER put a
+  Korean or Chinese word in dayOfWeek or partOfDay. Translate them:
+  화요일 / 周二 / 星期二 → dayOfWeek="Tuesday";  오후 / 下午 → partOfDay="afternoon";
+  오전 / 上午 / 早上 → "morning";  저녁 / 晚上 → "evening".
+  다음주 / 下周 / 下星期 means next week → set type="next_week" (with dayOfWeek if a day
+  is named). Always also keep the user's original phrase in timePreference.raw.
 - "next week" → type="next_week".
 - "this week" → type="this_week".
 - "the week after" / "in two weeks" → type="week_after".

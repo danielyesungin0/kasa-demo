@@ -51,6 +51,7 @@ import {
 import { cn } from "@/lib/cn";
 import { track } from "@/lib/analytics";
 import { detectUnsupportedService } from "@/lib/unsupported-services";
+import { normalizeTimePreferenceLocale } from "@/lib/ai/locale-normalize";
 
 /* -------------------------------------------------------------------------- */
 /* Types                                                                       */
@@ -4461,17 +4462,30 @@ function aiTimePrefToHints(
         dayOfWeek: string | null;
         date: string | null;
         partOfDay: "morning" | "afternoon" | "evening" | null;
+        raw?: string | null;
       }
     | null
 ): TimeHints {
   const hints = emptyHints();
   if (!tp) return hints;
 
-  if (tp.partOfDay) hints.period = tp.partOfDay;
+  // Locale-agnostic normalization (English / Korean / Simplified Chinese).
+  // The model may leak the user's language into dayOfWeek/partOfDay (e.g.
+  // "화요일", "周二") or drop a field that was present in `raw` ("오후", "下午").
+  // We normalize the structured fields to English enums, falling back to a
+  // scan of `raw`. This is what keeps "다음주 화요일 오후" / "下周二下午" booking on
+  // the right day + time instead of dropping to "next available openings".
+  const loc = normalizeTimePreferenceLocale({
+    dayOfWeek: tp.dayOfWeek,
+    partOfDay: tp.partOfDay,
+    raw: tp.raw ?? null,
+  });
 
-  // Day-of-week — normalize to 3-letter form the executor uses.
-  if (tp.dayOfWeek) {
-    const short = FULL_DAY_TO_SHORT[tp.dayOfWeek.toLowerCase()];
+  if (loc.partOfDay) hints.period = loc.partOfDay;
+
+  // Day-of-week — normalize to the 3-letter form the executor uses.
+  if (loc.dayOfWeek) {
+    const short = FULL_DAY_TO_SHORT[loc.dayOfWeek.toLowerCase()];
     if (short) hints.days = [short];
   }
 
@@ -4514,6 +4528,15 @@ function aiTimePrefToHints(
       break;
     case null:
       break;
+  }
+
+  // "next week" recovery: a model may set type="specific_day" for "다음주 화요일"
+  // / "下周二" / "next week Tuesday" without encoding the week shift. If the raw
+  // phrase clearly means next week and no shift was set, apply it — so the
+  // requested day resolves to NEXT week's occurrence, not this week's.
+  if (loc.nextWeek && hints.weekShift === null) {
+    hints.weekShift = 1;
+    hints.relative = "next-week";
   }
 
   return hints;
