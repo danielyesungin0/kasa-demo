@@ -511,6 +511,57 @@ export function ClientBookingPage({
 
   const [stage, setStage] = useState<Stage>("home");
 
+  // ── Native browser back/forward ────────────────────────────────────────────
+  // The booking flow is a single client component with a local `stage`, so the
+  // browser's back button did nothing. We mirror stage transitions into the
+  // history stack: entering a non-home stage pushes an entry; the OS back button
+  // fires popstate, which we map back to the previous stage. A ref guard stops
+  // the popstate-driven setStage from pushing again (which would loop).
+  const isPoppingRef = useRef(false);
+  const prevStageRef = useRef<Stage>("home");
+
+  useEffect(() => {
+    // Seed the initial history entry so the first push has somewhere to go back to.
+    if (typeof window !== "undefined" && !window.history.state?.kasaStage) {
+      window.history.replaceState({ kasaStage: "home" }, "");
+    }
+    function onPop(e: PopStateEvent) {
+      let target: Stage = (e.state?.kasaStage as Stage) ?? "home";
+      // Guard cold-landings: some stages only render with prior context
+      // (selected service/slot). If we'd back into one of those without the
+      // context, fall to home instead of a blank screen. We read the latest
+      // context via a ref so this handler (bound once) isn't stale.
+      const needsContext: Stage[] = ["time", "details", "review", "reschedule-review", "confirmed"];
+      if (needsContext.includes(target) && !contextRef.current.selectedService && !contextRef.current.lastRecommendedService) {
+        target = "home";
+      }
+      isPoppingRef.current = true; // suppress the push that the stage effect would do
+      setStage(target);
+    }
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  useEffect(() => {
+    // Reflect stage changes into history — but not when the change CAME FROM a
+    // back/forward (popstate), or we'd push a duplicate and break the stack.
+    if (isPoppingRef.current) {
+      isPoppingRef.current = false;
+      prevStageRef.current = stage;
+      return;
+    }
+    if (stage === prevStageRef.current) return;
+    if (typeof window !== "undefined") {
+      // home is the base; deeper stages push so back returns to the prior one.
+      if (stage === "home") {
+        window.history.replaceState({ kasaStage: "home" }, "");
+      } else {
+        window.history.pushState({ kasaStage: stage }, "");
+      }
+    }
+    prevStageRef.current = stage;
+  }, [stage]);
+
   // Entry screen vs assistant chat. Defaults to false (entry screen visible)
   // so confident clients can fast-book without engaging the chat. Tapping
   // "Help me choose" or typing in the entry-screen composer flips this on.
@@ -523,6 +574,12 @@ export function ClientBookingPage({
 
   // Three-bucket context — single source of truth for the assistant
   const [context, setContext] = useState<AssistantContext>(EMPTY_CONTEXT);
+  // Mirror of context for the once-bound popstate handler (avoids a stale
+  // closure when deciding whether a back-target stage has the context it needs).
+  const contextRef = useRef(context);
+  useEffect(() => {
+    contextRef.current = context;
+  }, [context]);
 
   // Start with an empty turn list: the chat should not greet first. The
   // user's first message opens the conversation; everything else is a
