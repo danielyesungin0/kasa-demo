@@ -115,6 +115,17 @@ type AssistantTurn =
       // Which nav chips should render. Computed once when the turn is built so
       // we don't pass full service slot lists down the tree just for this.
       chipAvailability: Record<NavChipKey, boolean>;
+      // ── Recommendation-first presentation ──────────────────────────────────
+      // A short, context-derived lead-in ("Found a few good times for your Root
+      // Touch-up, next Tuesday afternoon"). Null → no intro (generic listing).
+      intro?: string | null;
+      // The 3–6 RECOMMENDED slots shown first (the hero set). `slots` holds the
+      // FULL contextually-relevant set; everything beyond the recommendations is
+      // revealed on "See all". When absent we fall back to showing `slots`.
+      recommended?: TimeSlot[];
+      // Label for the expand action, e.g. "See all Tuesday times". Null → no
+      // expansion offered (recommended IS everything).
+      seeAllLabel?: string | null;
     }
   | { kind: "consult-cta"; id: string; reason?: string }
   | { kind: "custom-cta"; id: string }
@@ -726,6 +737,13 @@ export function ClientBookingPage({
       currentWeekShift,
       slots
     );
+    // Recommendation-first: lead with 3–6 context-ranked times (the real
+    // requested hints, not emptyHints), reveal the rest behind "See all".
+    const reco = buildRecommendation(
+      slots,
+      context.lastIntentTimeHints,
+      svc?.name ?? "appointment"
+    );
     pushTurn({
       kind: "times",
       id: `t-times-${Date.now()}`,
@@ -733,6 +751,9 @@ export function ClientBookingPage({
       anchorDateKey,
       currentWeekShift,
       chipAvailability,
+      intro: reco.intro,
+      recommended: reco.recommended,
+      seeAllLabel: reco.seeAllLabel,
     });
     patchContext({
       lastShownSlots: slots,
@@ -4775,6 +4796,84 @@ function formatHour(hour24: number): string {
 }
 
 /**
+ * Build the recommendation-first presentation for an availability turn.
+ *
+ * Takes the full contextually-relevant slot set plus the requested time hints
+ * and the service, and returns {intro, recommended, seeAllLabel}:
+ *   - recommended: 3–6 slots, "closest-to-requested-time then spread" within the
+ *     anchor day, so the lead options feel intentional but still show range.
+ *   - intro: a short, human lead-in derived from the service + what they asked.
+ *   - seeAllLabel: the expand affordance label (e.g. "See all Tuesday times"),
+ *     or null when the recommendations already are everything.
+ *
+ * Pure + provider-agnostic. Reuses rankTimeSlots (the existing context ranker).
+ */
+const MAX_RECOMMENDED = 6;
+
+function buildRecommendation(
+  allSlots: TimeSlot[],
+  hints: TimeHints,
+  serviceName: string
+): { intro: string | null; recommended: TimeSlot[]; seeAllLabel: string | null } {
+  if (allSlots.length === 0) {
+    return { intro: null, recommended: [], seeAllLabel: null };
+  }
+
+  // Anchor day: the first slot's day after ranking by the requested hints.
+  // rankTimeSlots already weights requested day + period + hour, so its top
+  // result is the best day to lead with.
+  const ranked = rankTimeSlots(allSlots, hints);
+  const anchorKey = ranked[0]?.dateKey ?? allSlots[0].dateKey;
+  const anchorSlots = ranked.filter((s) => s.dateKey === anchorKey);
+
+  // "Closest then spread" within the anchor day:
+  //   - lead with the slots nearest the requested hour/period (already ordered
+  //     by rankTimeSlots), then
+  //   - if room remains, add a spread pick from later in the day for range.
+  const sortedByTime = [...anchorSlots].sort((a, b) => a.hour24 - b.hour24);
+  const lead = anchorSlots.slice(0, Math.min(3, anchorSlots.length));
+  const recommended: TimeSlot[] = [...lead];
+  if (recommended.length < MAX_RECOMMENDED) {
+    for (const s of sortedByTime) {
+      if (recommended.length >= MAX_RECOMMENDED) break;
+      if (!recommended.find((r) => r.id === s.id)) recommended.push(s);
+    }
+  }
+  // Keep the final shown set in chronological order so it reads naturally.
+  recommended.sort((a, b) => a.hour24 - b.hour24);
+
+  // Intro copy — context-aware. Mention the day if we have one; period if asked.
+  const dayLabel = ranked[0]?.dayLabel;
+  const periodWord =
+    hints.period === "morning" ? "morning" :
+    hints.period === "afternoon" ? "afternoon" :
+    hints.period === "evening" ? "evening" : null;
+  const whenBits: string[] = [];
+  if (dayLabel) whenBits.push(DAY_FULL_FROM_SHORT[dayLabel] ?? dayLabel);
+  if (periodWord) whenBits.push(periodWord);
+  const whenPhrase = whenBits.length > 0 ? ` ${whenBits.join(" ")}` : "";
+  const intro = `Found a few good times for your ${serviceName}${whenPhrase} 💛`;
+
+  // Expansion: only offer if there are more slots than we're recommending
+  // (either more on the anchor day, or slots on other days).
+  const moreOnDay = anchorSlots.length > recommended.length;
+  const moreOtherDays = allSlots.length > anchorSlots.length;
+  const seeAllLabel =
+    moreOnDay || moreOtherDays
+      ? dayLabel && !moreOtherDays
+        ? `See all ${DAY_FULL_FROM_SHORT[dayLabel] ?? dayLabel} times`
+        : "See all times"
+      : null;
+
+  return { intro, recommended, seeAllLabel };
+}
+
+const DAY_FULL_FROM_SHORT: Record<string, string> = {
+  Sun: "Sunday", Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday",
+  Thu: "Thursday", Fri: "Friday", Sat: "Saturday",
+};
+
+/**
  * Given a slot's dateKey, figure out which week-shift it falls in (0/1/2)
  * relative to MOCK_TODAY. Anything past week-shift 2 returns null.
  */
@@ -6954,6 +7053,11 @@ function TurnRow({
   const personalize = (text: string) =>
     text.replace(/\bShen\b/g, stylistName);
 
+  // Expand state for the recommendation-first availability turn ("See all").
+  // Declared unconditionally (every TurnRow gets one; only the times turn uses
+  // it) so hooks order stays stable across turn kinds.
+  const [showAllTimes, setShowAllTimes] = useState(false);
+
   if (turn.kind === "bot-text") {
     return (
       <div>
@@ -7134,10 +7238,25 @@ function TurnRow({
 
     const hasAnyChips = rangeChips.length > 0 || navChips.length > 0;
 
+    // Recommendation-first presentation. When the turn carries `recommended`
+    // (the 3–6 context-ranked hero set), lead with those + an intro, and gate
+    // the full list behind "See all". Falls back to the flat grid for turns
+    // built before this (or with no recommendation).
+    const recommended = turn.recommended ?? null;
+    const hasReco = recommended !== null && recommended.length > 0;
+    const expanded = showAllTimes || !hasReco;
+
     return (
       <div className="animate-fade-up space-y-3">
+        {turn.intro && !expanded && (
+          <BotBubble>{personalize(turn.intro)}</BotBubble>
+        )}
+
+        {/* Hero: recommended times (time is the visual focus). When expanded,
+            Step 2 renders the grouped full view; until then this flat grid is
+            the fallback for the full list. */}
         <div className="grid grid-cols-3 gap-2">
-          {turn.slots.map((slot) => (
+          {(expanded ? turn.slots : recommended ?? turn.slots).map((slot) => (
             <TimeSlotCard
               key={slot.id}
               slot={slot}
@@ -7145,6 +7264,17 @@ function TurnRow({
             />
           ))}
         </div>
+
+        {/* See all — progressive disclosure into the full schedule. */}
+        {hasReco && !expanded && turn.seeAllLabel && (
+          <button
+            type="button"
+            onClick={() => setShowAllTimes(true)}
+            className="min-h-[40px] w-full rounded-xl border border-ink-200 bg-cream-50 px-4 py-2.5 text-sm font-medium text-ink-700 transition hover:border-ink-300 active:scale-[0.99]"
+          >
+            {turn.seeAllLabel}
+          </button>
+        )}
 
         {hasAnyChips && (
           <div className="space-y-2 pt-1">
