@@ -4874,6 +4874,44 @@ const DAY_FULL_FROM_SHORT: Record<string, string> = {
 };
 
 /**
+ * Group slots for the expanded "See all" view: Date → {Morning, Afternoon,
+ * Evening} → times. The date lives in the section header (once), so the cards
+ * themselves show only the time — no per-card date eyebrow, no mobile
+ * truncation, faster scanning. Empty part-of-day buckets are dropped.
+ */
+type PartBucket = { label: "Morning" | "Afternoon" | "Evening"; slots: TimeSlot[] };
+type DateGroup = { dateKey: string; dayLabel: string; dateLabel: string; buckets: PartBucket[] };
+
+function groupSlotsByDateAndPart(slots: TimeSlot[]): DateGroup[] {
+  const byDate = new Map<string, TimeSlot[]>();
+  for (const s of slots) {
+    const arr = byDate.get(s.dateKey) ?? [];
+    arr.push(s);
+    byDate.set(s.dateKey, arr);
+  }
+  const dateKeys = Array.from(byDate.keys()).sort();
+  const groups: DateGroup[] = [];
+  for (const dateKey of dateKeys) {
+    const daySlots = (byDate.get(dateKey) ?? []).sort((a, b) => a.hour24 - b.hour24);
+    const morning = daySlots.filter((s) => s.hour24 < 12);
+    const afternoon = daySlots.filter((s) => s.hour24 >= 12 && s.hour24 < 17);
+    const evening = daySlots.filter((s) => s.hour24 >= 17);
+    const buckets: PartBucket[] = [];
+    if (morning.length) buckets.push({ label: "Morning", slots: morning });
+    if (afternoon.length) buckets.push({ label: "Afternoon", slots: afternoon });
+    if (evening.length) buckets.push({ label: "Evening", slots: evening });
+    const first = daySlots[0];
+    groups.push({
+      dateKey,
+      dayLabel: DAY_FULL_FROM_SHORT[first.dayLabel] ?? first.dayLabel,
+      dateLabel: first.dateLabel,
+      buckets,
+    });
+  }
+  return groups;
+}
+
+/**
  * Given a slot's dateKey, figure out which week-shift it falls in (0/1/2)
  * relative to MOCK_TODAY. Anything past week-shift 2 returns null.
  */
@@ -7252,18 +7290,51 @@ function TurnRow({
           <BotBubble>{personalize(turn.intro)}</BotBubble>
         )}
 
-        {/* Hero: recommended times (time is the visual focus). When expanded,
-            Step 2 renders the grouped full view; until then this flat grid is
-            the fallback for the full list. */}
-        <div className="grid grid-cols-3 gap-2">
-          {(expanded ? turn.slots : recommended ?? turn.slots).map((slot) => (
-            <TimeSlotCard
-              key={slot.id}
-              slot={slot}
-              onClick={() => onSlotPick(slot)}
-            />
-          ))}
-        </div>
+        {/* Hero (collapsed): recommended times — time is the visual focus. */}
+        {!expanded && (
+          <div className="grid grid-cols-3 gap-2">
+            {(recommended ?? turn.slots).map((slot) => (
+              <TimeSlotCard
+                key={slot.id}
+                slot={slot}
+                onClick={() => onSlotPick(slot)}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Expanded "See all": grouped Date → part-of-day → time-only chips.
+            Date is in the header (once), so cards never repeat/truncate it. */}
+        {expanded && (
+          <div className="space-y-4">
+            {groupSlotsByDateAndPart(turn.slots).map((group) => (
+              <div key={group.dateKey}>
+                <p className="font-display text-sm font-medium text-ink-900">
+                  {group.dayLabel} · {group.dateLabel}
+                </p>
+                {group.buckets.map((bucket) => (
+                  <div key={bucket.label} className="mt-2">
+                    <p className="text-[11px] uppercase tracking-[0.14em] text-ink-400">
+                      {bucket.label}
+                    </p>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {bucket.slots.map((slot) => (
+                        <button
+                          key={slot.id}
+                          type="button"
+                          onClick={() => onSlotPick(slot)}
+                          className="min-h-[40px] rounded-xl border border-ink-100 bg-cream-50 px-3.5 py-2 font-display text-[15px] font-medium text-ink-900 transition hover:border-ink-300 hover:shadow-soft active:scale-[0.98]"
+                        >
+                          {slot.timeLabel}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* See all — progressive disclosure into the full schedule. */}
         {hasReco && !expanded && turn.seeAllLabel && (
@@ -7273,6 +7344,17 @@ function TurnRow({
             className="min-h-[40px] w-full rounded-xl border border-ink-200 bg-cream-50 px-4 py-2.5 text-sm font-medium text-ink-700 transition hover:border-ink-300 active:scale-[0.99]"
           >
             {turn.seeAllLabel}
+          </button>
+        )}
+
+        {/* Collapse back to recommendations (only when reco exists). */}
+        {hasReco && expanded && showAllTimes && (
+          <button
+            type="button"
+            onClick={() => setShowAllTimes(false)}
+            className="min-h-[40px] w-full rounded-xl border border-ink-200 bg-cream-50 px-4 py-2.5 text-sm font-medium text-ink-700 transition hover:border-ink-300 active:scale-[0.99]"
+          >
+            Show recommended times
           </button>
         )}
 
