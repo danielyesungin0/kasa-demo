@@ -41,16 +41,16 @@ export function TimeSlotCard({
       type="button"
       onClick={onClick}
       className={cn(
-        "group flex flex-col items-start rounded-2xl border p-4 text-left transition",
+        "group flex w-full min-w-0 flex-col items-start rounded-2xl border p-4 text-left transition",
         selected
           ? "border-ink-900 bg-cream-100 shadow-soft"
           : "border-ink-100 bg-cream-50 hover:border-ink-300 hover:shadow-soft"
       )}
     >
-      <span className="font-display text-xs uppercase tracking-[0.14em] text-ink-500">
+      <span className="w-full truncate font-display text-xs uppercase tracking-[0.14em] text-ink-500">
         {slot.dayLabel} · {slot.dateLabel}
       </span>
-      <span className="mt-1.5 font-display text-xl font-medium text-ink-900">
+      <span className="mt-1.5 w-full truncate font-display text-xl font-medium text-ink-900">
         {slot.timeLabel}
       </span>
     </button>

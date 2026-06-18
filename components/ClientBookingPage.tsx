@@ -5,6 +5,7 @@ import { PageShell } from "@/components/PageShell";
 import { useIsMobile } from "@/lib/use-is-mobile";
 import { useKeyboardAwareViewport } from "@/lib/use-keyboard-viewport";
 import { TimeSlotCard } from "@/components/TimeSlotCard";
+import { TimeSlotGridSkeleton, Skeleton } from "@/components/Skeleton";
 import { AppointmentCard } from "@/components/AppointmentCard";
 import {
   STYLIST,
@@ -7794,9 +7795,13 @@ function TimeStage({
       </h1>
       <p className="mt-1 text-sm text-ink-500">All available openings.</p>
 
-      {/* Loading state — real availability is being fetched. */}
+      {/* Loading state — real availability is being fetched. Skeleton grid
+          mirrors the real slot layout so it reads as loading, not broken. */}
       {loadedSlots === null && (
-        <p className="mt-6 text-sm text-ink-400">Finding openings…</p>
+        <>
+          <p className="mt-6 text-sm text-ink-400">Finding openings…</p>
+          <TimeSlotGridSkeleton count={6} />
+        </>
       )}
 
       {/* Loaded but ZERO openings across all weeks — honest empty state, not
@@ -7889,8 +7894,8 @@ function ServiceContextBar({
         Booking
       </p>
       <div className="mt-1 flex items-baseline justify-between gap-3">
-        <p className="text-[15px] font-medium text-ink-900">{service.name}</p>
-        <p className="text-sm text-ink-600">
+        <p className="min-w-0 truncate text-[15px] font-medium text-ink-900">{service.name}</p>
+        <p className="shrink-0 whitespace-nowrap text-sm text-ink-600">
           {service.priceLabel}
           <span className="px-1.5 text-ink-300">·</span>
           {service.durationLabel}
@@ -7901,8 +7906,8 @@ function ServiceContextBar({
           key={s.id}
           className="mt-1 flex items-baseline justify-between gap-3"
         >
-          <p className="text-[15px] font-medium text-ink-900">{s.name}</p>
-          <p className="text-sm text-ink-600">
+          <p className="min-w-0 truncate text-[15px] font-medium text-ink-900">{s.name}</p>
+          <p className="shrink-0 whitespace-nowrap text-sm text-ink-600">
             {s.priceLabel}
             <span className="px-1.5 text-ink-300">·</span>
             {s.durationLabel}
