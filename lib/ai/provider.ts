@@ -143,9 +143,56 @@ export type AIRequestOptions = {
   debug?: boolean;
 };
 
+/* -------------------------------------------------------------------------- */
+/* Provider abstraction                                                        */
+/* -------------------------------------------------------------------------- */
+
+export type ProviderName = "groq" | "claude";
+
 /**
- * Single entry point. Returns null on any failure — the caller falls back
- * to deterministic chat.
+ * What every provider returns: the raw model text (a JSON string we parse into
+ * AIResponse), plus a coarse outcome so callAI can record metrics and decide
+ * whether to fall back. Providers do NOT parse or record metrics themselves —
+ * that's centralized in callAI so behavior is identical across providers.
+ */
+export type ProviderRawResult = {
+  ok: boolean;
+  raw: string | null;
+  outcome: "success" | "rate_limited" | "error" | "timeout";
+  /** True only when this provider has no API key configured — lets callAI
+   *  fall through to the default provider without counting it as a failure. */
+  notConfigured?: boolean;
+};
+
+type ProviderFn = (
+  ctx: AIRequestContext,
+  opts: AIRequestOptions
+) => Promise<ProviderRawResult>;
+
+const PROVIDERS: Record<ProviderName, ProviderFn> = {
+  groq: callGroqRaw,
+  claude: callClaudeRaw,
+};
+
+/** The safe default. Groq stays the default until AI_PROVIDER explicitly says
+ *  otherwise — Shen's beta keeps working with no Claude key present. */
+const DEFAULT_PROVIDER: ProviderName = "groq";
+
+function resolveProviderName(): ProviderName {
+  const raw = (process.env.AI_PROVIDER ?? "").trim().toLowerCase();
+  if (raw === "claude") return "claude";
+  if (raw === "groq") return "groq";
+  // Unknown / unset → default. Never throw; never silently break the beta.
+  // TODO(per-provider): a future per-stylist override (e.g. Shen on Claude,
+  // others on Groq) would resolve here using the slug/stylist id. Kept as a
+  // single global env switch for now to avoid overbuilding.
+  return DEFAULT_PROVIDER;
+}
+
+/**
+ * Single entry point for the whole app. Returns a parsed AIResponse or null
+ * (null → caller falls back to deterministic chat). Owns: provider selection,
+ * parsing, metrics, the Claude→Groq fallback chain, and provider logging.
  */
 export async function callAI(
   ctx: AIRequestContext,
@@ -156,14 +203,64 @@ export async function callAI(
     return null;
   }
 
-  const provider = process.env.AI_PROVIDER ?? "groq";
-  switch (provider) {
-    case "groq":
-      return callGroq(ctx, opts);
-    default:
-      if (opts.debug) console.log(`[ai] unknown provider: ${provider}`);
-      return null;
+  const primary = resolveProviderName();
+
+  // Try the selected provider; on a real failure (not "not configured"), and
+  // when it isn't already Groq, fall back to Groq as the safety net.
+  const first = await runProvider(primary, ctx, opts);
+  if (first) return first;
+
+  if (primary !== DEFAULT_PROVIDER) {
+    if (opts.debug) {
+      console.log(`[ai] ${primary} unavailable → falling back to ${DEFAULT_PROVIDER}`);
+    }
+    const fallback = await runProvider(DEFAULT_PROVIDER, ctx, opts);
+    if (fallback) return fallback;
   }
+
+  // Both failed (or default failed). Null → the chat route shows its warm
+  // "assistant is busy, try again" message with the handoff escape hatch.
+  return null;
+}
+
+/**
+ * Run one named provider end-to-end: call it, record metrics, parse. Returns a
+ * parsed AIResponse on success, or null on any failure (so callAI can fall
+ * back). Centralizing this keeps metrics + parsing identical across providers.
+ */
+async function runProvider(
+  name: ProviderName,
+  ctx: AIRequestContext,
+  opts: AIRequestOptions
+): Promise<AIResponse | null> {
+  const fn = PROVIDERS[name];
+  recordAIRequest();
+  const startedAt = Date.now();
+  const result = await fn(ctx, opts);
+  const elapsed = Date.now() - startedAt;
+
+  if (result.notConfigured) {
+    // No key for this provider — not a failure, just unavailable. Don't record
+    // an outcome (it never actually ran).
+    if (opts.debug) console.log(`[ai-provider] ${name}: not configured (no key)`);
+    return null;
+  }
+
+  recordAIOutcome(result.outcome, elapsed);
+
+  // Comparison logging: which provider handled this, and how it went. No keys,
+  // no user data — just provider/outcome/latency.
+  console.log(
+    `[ai-provider] ${JSON.stringify({ provider: name, outcome: result.outcome, latencyMs: elapsed })}`
+  );
+
+  if (!result.ok || !result.raw) return null;
+
+  const parsed = parseStructured(result.raw, opts);
+  if (!parsed) {
+    if (opts.debug) console.log(`[ai-provider] ${name}: response failed to parse`);
+  }
+  return parsed;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -172,14 +269,19 @@ export async function callAI(
 
 const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
 
-async function callGroq(
+/**
+ * Groq provider. Returns the raw model JSON string (or a failure outcome).
+ * Parsing + metrics + fallback are owned by callAI/runProvider — this function
+ * only does the HTTP call. Behavior is unchanged from the previous callGroq.
+ */
+async function callGroqRaw(
   ctx: AIRequestContext,
   opts: AIRequestOptions
-): Promise<AIResponse | null> {
+): Promise<ProviderRawResult> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     if (opts.debug) console.log("[ai] groq: no GROQ_API_KEY");
-    return null;
+    return { ok: false, raw: null, outcome: "error", notConfigured: true };
   }
   const model = process.env.GROQ_MODEL ?? "llama-3.1-8b-instant";
 
@@ -203,9 +305,6 @@ async function callGroq(
     });
   }
 
-  recordAIRequest();
-  const callStartedAt = Date.now();
-
   try {
     const controller = new AbortController();
     // 8 second cap — Groq is normally <500ms. If we're past 8s, fall back
@@ -221,8 +320,7 @@ async function callGroq(
       body: JSON.stringify({
         model,
         // JSON mode — Groq guarantees the response is valid JSON. Still
-        // wrapped in try/catch below because the *content* of the JSON
-        // (the AIResponse fields) may still be malformed.
+        // validated downstream because the JSON's *fields* may be malformed.
         response_format: { type: "json_object" },
         temperature: 0.3,
         max_tokens: 600,
@@ -240,37 +338,118 @@ async function callGroq(
       }
       // 429 = free-tier rate limit. Recorded distinctly so the chat route can
       // show a friendly "assistant is busy" message rather than a generic miss.
-      recordAIOutcome(
-        res.status === 429 ? "rate_limited" : "error",
-        Date.now() - callStartedAt
-      );
-      return null;
+      return { ok: false, raw: null, outcome: res.status === 429 ? "rate_limited" : "error" };
     }
 
     const data = (await res.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
     };
-    const raw = data.choices?.[0]?.message?.content;
+    const raw = data.choices?.[0]?.message?.content ?? null;
     if (!raw) {
       if (opts.debug) console.log("[ai] groq: empty content");
-      recordAIOutcome("error", Date.now() - callStartedAt);
-      return null;
+      return { ok: false, raw: null, outcome: "error" };
     }
 
     if (opts.debug) console.log("[ai] groq raw response:", raw.slice(0, 500));
-
-    const parsed = parseStructured(raw, opts);
-    // A non-null parse is a usable answer; a null parse is a content/shape
-    // failure (counts as an error, not a rate limit).
-    recordAIOutcome(parsed ? "success" : "error", Date.now() - callStartedAt);
-    return parsed;
+    return { ok: true, raw, outcome: "success" };
   } catch (err) {
     if (opts.debug) console.log("[ai] groq fetch failed:", err);
-    // AbortController fires an AbortError on our 8s timeout.
     const isAbort =
       err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError");
-    recordAIOutcome(isAbort ? "timeout" : "error", Date.now() - callStartedAt);
-    return null;
+    return { ok: false, raw: null, outcome: isAbort ? "timeout" : "error" };
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Claude (Anthropic) — the smarter optional brain                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Claude Haiku provider. Same contract as Groq: reuses buildSystemPrompt and
+ * returns the raw JSON string for callAI to parse into AIResponse. Uses the
+ * same prompt + tool/intent schema, so switching providers is behavior-
+ * compatible. Claude-specific tweaks are intentionally minimal: we just nudge
+ * it to emit JSON only (the system prompt already specifies the exact schema).
+ *
+ * Model default is a Haiku tier; override with ANTHROPIC_MODEL.
+ */
+const DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5-20251001";
+
+async function callClaudeRaw(
+  ctx: AIRequestContext,
+  opts: AIRequestOptions
+): Promise<ProviderRawResult> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    if (opts.debug) console.log("[ai] claude: no ANTHROPIC_API_KEY");
+    return { ok: false, raw: null, outcome: "error", notConfigured: true };
+  }
+  const model = process.env.ANTHROPIC_MODEL ?? DEFAULT_ANTHROPIC_MODEL;
+
+  // System prompt is identical to Groq's. We append one line reinforcing
+  // JSON-only output, since Claude has no equivalent of Groq's JSON mode flag.
+  const systemPrompt =
+    buildSystemPrompt(ctx) +
+    `\n\nIMPORTANT: Respond with ONLY the JSON object described above — no prose, no markdown, no code fences. The first character of your reply must be "{".`;
+
+  // Anthropic takes a separate system field; conversation is user/assistant only.
+  const messages = [
+    ...ctx.conversation.map((t) => ({
+      role: t.role as "user" | "assistant",
+      content: t.content,
+    })),
+    { role: "user" as const, content: ctx.userMessage },
+  ];
+
+  if (opts.debug) {
+    console.log("[ai] claude request:", {
+      model,
+      messages: messages.map((m) => ({ role: m.role, content: m.content.slice(0, 200) })),
+    });
+  }
+
+  try {
+    // Lazy import so projects without the key/runtime never load the SDK.
+    const { default: Anthropic } = await import("@anthropic-ai/sdk");
+    const client = new Anthropic({ apiKey });
+
+    const res = await client.messages.create(
+      {
+        model,
+        max_tokens: 700,
+        temperature: 0.3,
+        system: systemPrompt,
+        messages,
+      },
+      // 12s cap — slightly more headroom than Groq; still bounded so a slow
+      // call can't hang the user (we fall back to Groq / deterministic).
+      { timeout: 12000 }
+    );
+
+    // Concatenate any text blocks into the raw JSON string.
+    const raw = res.content
+      .map((b) => (b.type === "text" ? b.text : ""))
+      .join("")
+      .trim();
+
+    if (!raw) {
+      if (opts.debug) console.log("[ai] claude: empty content");
+      return { ok: false, raw: null, outcome: "error" };
+    }
+
+    if (opts.debug) console.log("[ai] claude raw response:", raw.slice(0, 500));
+    return { ok: true, raw, outcome: "success" };
+  } catch (err: unknown) {
+    // Map Anthropic errors to our outcomes without leaking the key/body.
+    const e = err as { status?: number; name?: string };
+    const status = e?.status;
+    const isTimeout = e?.name === "APIConnectionTimeoutError" || e?.name === "AbortError";
+    if (opts.debug) console.log(`[ai] claude error: status=${status ?? "?"} name=${e?.name ?? "?"}`);
+    return {
+      ok: false,
+      raw: null,
+      outcome: isTimeout ? "timeout" : status === 429 ? "rate_limited" : "error",
+    };
   }
 }
 
@@ -283,8 +462,24 @@ function parseStructured(raw: string, opts: AIRequestOptions): AIResponse | null
   try {
     parsed = JSON.parse(raw);
   } catch {
-    if (opts.debug) console.log("[ai] response not valid JSON");
-    return null;
+    // Groq's JSON mode returns clean JSON, but Claude (no JSON-mode flag) may
+    // occasionally wrap the object in a ```json fence or stray prose. Recover by
+    // extracting the first {...} block, then retry. Still defensive — gives up
+    // (returns null → deterministic fallback) if that also fails.
+    const fenced = raw.replace(/```(?:json)?/gi, "").trim();
+    const start = fenced.indexOf("{");
+    const end = fenced.lastIndexOf("}");
+    if (start !== -1 && end > start) {
+      try {
+        parsed = JSON.parse(fenced.slice(start, end + 1));
+      } catch {
+        if (opts.debug) console.log("[ai] response not valid JSON (after recovery)");
+        return null;
+      }
+    } else {
+      if (opts.debug) console.log("[ai] response not valid JSON");
+      return null;
+    }
   }
   if (!parsed || typeof parsed !== "object") return null;
   const obj = parsed as Record<string, unknown>;
