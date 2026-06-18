@@ -354,7 +354,32 @@ function nyWallToUtcIso(dateKey: string, hm: string): string {
 // fetch once per service and cache it. The cache is module-level keyed by
 // (slug, serviceId) so the chat helpers and TimeStage share one fetch.
 
-const realSlotsCache = new Map<string, TimeSlot[]>();
+// Cache entries carry the local calendar date they were fetched on. Slots are
+// date-relative ("tomorrow", min-notice, past-time filtering all key off the
+// current day), so a cache built yesterday is wrong today. We treat any entry
+// whose fetch-date != today as cold and re-fetch — this is what keeps a
+// long-open tab fresh WITHOUT the user needing to refresh.
+type SlotCacheEntry = { fetchedOn: string; slots: TimeSlot[] };
+const realSlotsCache = new Map<string, SlotCacheEntry>();
+
+function localDateStamp(): string {
+  // Local calendar day, e.g. "2026-06-18". Cheap; called on each cache read.
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
+}
+
+/** Read a cache entry only if it was fetched today; otherwise treat as cold. */
+function freshCachedSlots(key: string): TimeSlot[] | null {
+  const entry = realSlotsCache.get(key);
+  if (!entry) return null;
+  if (entry.fetchedOn !== localDateStamp()) {
+    realSlotsCache.delete(key); // stale (day rolled over) → force re-fetch
+    return null;
+  }
+  return entry.slots;
+}
 
 function realSlotsCacheKey(serviceId: string, slug?: string): string {
   return `${slug ?? "__legacy__"}::${serviceId}`;
@@ -376,9 +401,9 @@ function invalidateRealSlots(serviceId: string, slug?: string) {
  * - slug-less legacy/demo: returns mock so /shen keeps working.
  */
 function cachedRealSlots(serviceId: string, slug?: string): TimeSlot[] {
-  const cached = realSlotsCache.get(realSlotsCacheKey(serviceId, slug));
+  const cached = freshCachedSlots(realSlotsCacheKey(serviceId, slug));
   if (cached) return cached;
-  if (slug) return []; // real provider, cold cache → empty, never mock
+  if (slug) return []; // real provider, cold/stale cache → empty, never mock
   return getSlotsForService(serviceId); // legacy demo only
 }
 
@@ -394,10 +419,11 @@ async function getRealSlots(
   slug?: string
 ): Promise<TimeSlot[]> {
   const key = realSlotsCacheKey(serviceId, slug);
-  const cached = realSlotsCache.get(key);
+  const cached = freshCachedSlots(key);
   if (cached) return cached;
 
   const isRealProvider = Boolean(slug);
+  const stamp = localDateStamp();
   try {
     const slugParam = slug ? `&slug=${encodeURIComponent(slug)}` : "";
     // weekShift=0 — the API returns weekCount:3 from this point, covering the
@@ -411,12 +437,12 @@ async function getRealSlots(
       const slots = data.slots as TimeSlot[];
       // Real provider: cache + return whatever the API gave (incl. []).
       if (isRealProvider) {
-        realSlotsCache.set(key, slots);
+        realSlotsCache.set(key, { fetchedOn: stamp, slots });
         return slots;
       }
       // Legacy: use API slots if non-empty, else mock below.
       if (slots.length > 0) {
-        realSlotsCache.set(key, slots);
+        realSlotsCache.set(key, { fetchedOn: stamp, slots });
         return slots;
       }
     }
@@ -424,7 +450,7 @@ async function getRealSlots(
     // Real provider: do NOT fall back to mock — an error means "we couldn't
     // load real availability", and showing fake slots would be worse.
     if (isRealProvider) {
-      realSlotsCache.set(key, []);
+      realSlotsCache.set(key, { fetchedOn: stamp, slots: [] });
       return [];
     }
     // Legacy: fall through to mock below.
@@ -432,7 +458,7 @@ async function getRealSlots(
 
   // Slug-less legacy / internal demo only.
   const mock = getSlotsForService(serviceId);
-  realSlotsCache.set(key, mock);
+  realSlotsCache.set(key, { fetchedOn: stamp, slots: mock });
   return mock;
 }
 
@@ -586,6 +612,26 @@ export function ClientBookingPage({
       })
       .catch(() => {});
   }, [slugQS]);
+
+  // Keep a long-open tab fresh. When the user returns to a backgrounded tab
+  // (or refocuses the window), drop the cached availability so the next read
+  // re-fetches against the real current time. Without this, a tab left open
+  // overnight serves yesterday's slots ("haircut tomorrow" → today's times)
+  // until a manual refresh. The date-stamped cache handles the day-rollover
+  // case; this also covers same-session staleness after hours idle.
+  useEffect(() => {
+    function refreshIfVisible() {
+      if (document.visibilityState === "visible") {
+        realSlotsCache.clear();
+      }
+    }
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    window.addEventListener("focus", refreshIfVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+      window.removeEventListener("focus", refreshIfVisible);
+    };
+  }, []);
 
   // Prime the real-slots cache whenever a service becomes active or
   // recommended, so the synchronous chat helpers (cachedRealSlots) have real

@@ -75,15 +75,44 @@ function buildSlotFromDateKey(dateKey: string, time24: string): TimeSlot {
   };
 }
 
-export const MOCK_TODAY = (() => {
-  const key = todayLocalDateKey();
-  return dateKeyToMeta(key);
-})();
+// "Today"/"tomorrow" must reflect the ACTUAL current date every time they're
+// read — not the date the JS bundle happened to load. Previously these were
+// constants evaluated once at module load, so a tab left open overnight kept
+// yesterday's "today": "haircut tomorrow" then resolved to the wrong day until
+// a refresh. Defining them as getters makes every `MOCK_TODAY.dateKey` access
+// recompute, so the page is always fresh without a reload. Call sites are
+// unchanged — they still read `.dateKey` / `.dayLabel` etc.
+type DateMeta = ReturnType<typeof dateKeyToMeta>;
 
-export const MOCK_TOMORROW = (() => {
-  const key = addDaysToDateKey(todayLocalDateKey(), 1);
-  return dateKeyToMeta(key);
-})();
+export const MOCK_TODAY: DateMeta = {
+  get dateKey() {
+    return dateKeyToMeta(todayLocalDateKey()).dateKey;
+  },
+  get dayLabel() {
+    return dateKeyToMeta(todayLocalDateKey()).dayLabel;
+  },
+  get dateLabel() {
+    return dateKeyToMeta(todayLocalDateKey()).dateLabel;
+  },
+  get dayOfMonth() {
+    return dateKeyToMeta(todayLocalDateKey()).dayOfMonth;
+  },
+};
+
+export const MOCK_TOMORROW: DateMeta = {
+  get dateKey() {
+    return dateKeyToMeta(addDaysToDateKey(todayLocalDateKey(), 1)).dateKey;
+  },
+  get dayLabel() {
+    return dateKeyToMeta(addDaysToDateKey(todayLocalDateKey(), 1)).dayLabel;
+  },
+  get dateLabel() {
+    return dateKeyToMeta(addDaysToDateKey(todayLocalDateKey(), 1)).dateLabel;
+  },
+  get dayOfMonth() {
+    return dateKeyToMeta(addDaysToDateKey(todayLocalDateKey(), 1)).dayOfMonth;
+  },
+};
 
 /* -------------------------------------------------------------------------- */
 /* Dynamic slot generator                                                      */
