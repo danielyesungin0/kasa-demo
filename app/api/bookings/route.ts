@@ -3,6 +3,7 @@ import { createServerSupabaseClient, createServiceRoleSupabaseClient } from "@/l
 import { isSameOrigin } from "@/lib/api/origin-check";
 import { ensureFreshSquareToken } from "@/lib/square/ensure-fresh-token";
 import { sendBookingConfirmation } from "@/lib/email";
+import { sendBookingConfirmationSms } from "@/lib/sms";
 import { SQUARE_BASE } from "@/lib/square/config";
 import { resolveStylist } from "@/lib/stylists/resolve";
 import { resolveBookingMode, isSquareReady } from "@/lib/bookings/mode";
@@ -245,15 +246,28 @@ export async function POST(request: NextRequest) {
   // Fire-and-forget email confirmation. Never await — booking succeeded
   // even if email fails. Skipped silently when no client email or no
   // RESEND_API_KEY configured.
+  const stylistName =
+    stylist.display_name ??
+    stylist.square_team_member_name ??
+    stylist.square_business_name ??
+    "your stylist";
+  const slotLabel = formatSlotLabel(startsAt);
+
   if (clientEmail) {
-    const stylistName =
-      stylist.display_name ??
-      stylist.square_team_member_name ??
-      stylist.square_business_name ??
-      "your stylist";
-    const slotLabel = formatSlotLabel(startsAt);
     void sendBookingConfirmation({
       to: clientEmail,
+      clientName,
+      serviceName,
+      slotLabel,
+      stylistName,
+    });
+  }
+
+  // Confirmation text — fire-and-forget, gated by SMS_ENABLED (default off, so
+  // this is a no-op until you turn it on). Never blocks or fails the booking.
+  if (clientPhone) {
+    sendBookingConfirmationSms({
+      to: clientPhone,
       clientName,
       serviceName,
       slotLabel,
