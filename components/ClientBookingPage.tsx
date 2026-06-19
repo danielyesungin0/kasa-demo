@@ -1414,6 +1414,41 @@ export function ClientBookingPage({
       return;
     }
 
+    // ── MID-BOOKING GUARD ──────────────────────────────────────────────────
+    // If we're already mid-booking (a service is in play and we've shown times)
+    // and the parser couldn't make sense of this message, DON'T hand a vague
+    // message to the AI — it tends to re-classify it as a fresh booking and
+    // restart the "short or long?" clarification, erasing the user's progress
+    // (the endless loop). Instead, keep them in the flow: if there's any time
+    // signal, refine; otherwise gently re-show the current options without
+    // starting over. The deterministic parser already handled explicit refines/
+    // selections above, so reaching here with a service in play means the
+    // message was genuinely ambiguous.
+    const midBooking =
+      (context.selectedService !== null || context.lastRecommendedService !== null) &&
+      context.lastShownSlots.length > 0;
+    const detIsVague =
+      detIntent.kind === "unknown" ||
+      (detIntent.kind === "book" && detIntent.tags.length === 0);
+    if (midBooking && detIsVague) {
+      const svc = context.selectedService ?? context.lastRecommendedService!;
+      const allSlots = cachedRealSlots(svc.id, slug);
+      // If the vague message carried a time hint, refine to it; else just
+      // re-surface the current openings so the thread doesn't dead-end/restart.
+      const vagueHints =
+        detIntent.kind === "book" && hintsHaveSignal(detIntent.timeHints)
+          ? detIntent.timeHints
+          : context.lastIntentTimeHints;
+      const ranked = rankTimeSlots(allSlots, vagueHints);
+      pushTurn({
+        kind: "bot-text",
+        id: `t-stay-${Date.now()}`,
+        text: `Still on your ${svc.name} 💛 Here are the times — tap one, or tell me a day or time that works.`,
+      });
+      showSlots(ranked, ranked[0]?.dateKey ?? null);
+      return;
+    }
+
     // Low-signal — call AI to interpret.
     const aiResponse = await fetchChatResponse(trimmed);
     if (aiResponse) {
