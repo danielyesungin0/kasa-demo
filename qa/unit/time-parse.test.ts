@@ -14,6 +14,20 @@ describe("compact texting time shorthand ('130' = 1:30, not everyone types '1:30
   it("plain service word → no hour", () => expect(extractTimeHints("haircut").hour24).toBeNull());
 });
 
+describe("AI-path recovery source: 'tomorrow at 130' yields BOTH day and time", () => {
+  // The AI sometimes returns dayOfWeek=null for "tomorrow at 130" (only
+  // partOfDay). aiTimePrefToHints recovers from raw via extractTimeHints — so
+  // raw must carry the day anchor AND the compact time, or the booking flow
+  // loses the day and falls back to the soonest (wrong AM) slots.
+  it("recovers relative=tomorrow, dateKey, and hour=1:30 PM together", () => {
+    const h = extractTimeHints("i need a haircut tomorrow at 130");
+    expect(h.hour24).toBe(13.5);
+    expect(h.timeFlexibility).toBe("exact");
+    expect(h.relative).toBe("tomorrow");
+    expect(h.dateKey).not.toBeNull();
+  });
+});
+
 function slot(dateKey: string, dayLabel: string, hour24: number): TimeSlot {
   const day = Number(dateKey.split("-")[2]);
   const hm = `${String(Math.floor(hour24)).padStart(2, "0")}:00`;

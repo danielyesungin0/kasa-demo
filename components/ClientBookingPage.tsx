@@ -732,7 +732,11 @@ export function ClientBookingPage({
   function showSlots(
     slots: TimeSlot[],
     anchorDateKey: string | null,
-    currentWeekShift: number | null = null
+    currentWeekShift: number | null = null,
+    // When the caller already pushed its own lead-in (e.g. a refinement ack
+    // like "Here are more openings…"), suppress the recommendation intro so the
+    // user doesn't see two near-identical messages stacked.
+    suppressIntro = false
   ) {
     const svc = context.selectedService ?? context.lastRecommendedService;
     const chipAvailability = computeChipAvailability(
@@ -755,7 +759,7 @@ export function ClientBookingPage({
       anchorDateKey,
       currentWeekShift,
       chipAvailability,
-      intro: reco.intro,
+      intro: suppressIntro ? null : reco.intro,
       recommended: reco.recommended,
       seeAllLabel: reco.seeAllLabel,
       exactStatus: reco.exactStatus ?? null,
@@ -2306,7 +2310,10 @@ export function ClientBookingPage({
       result.fallbackTier === "next-week"
         ? 4
         : 6;
-    showSlots(result.slots.slice(0, sliceCap), result.anchorDateKey, weekShift);
+    // suppressIntro: handleRefineTime already pushed its own ack ("Here are
+    // more openings…"), so don't also emit the recommendation intro — that's
+    // what caused two stacked near-identical messages.
+    showSlots(result.slots.slice(0, sliceCap), result.anchorDateKey, weekShift, true);
   }
 
   /**
@@ -4636,6 +4643,19 @@ function aiTimePrefToHints(
     if (rawHints.hour24 !== null) {
       hints.hour24 = rawHints.hour24;
       hints.timeFlexibility = rawHints.timeFlexibility;
+    }
+    // Recover the DAY anchor from raw too, when the AI dropped it. The model
+    // sometimes returns dayOfWeek=null / no concrete day for phrases like
+    // "tomorrow at 130" (it only set partOfDay). Without this the time is known
+    // but the day isn't, so ranking falls back to the soonest day (wrong AM
+    // slots). Only fill what the structured fields didn't already provide.
+    if (hints.days.length === 0 && rawHints.days.length > 0) {
+      hints.days = rawHints.days;
+    }
+    if (!hints.dateKey && rawHints.dateKey) hints.dateKey = rawHints.dateKey;
+    if (!hints.relative && rawHints.relative) hints.relative = rawHints.relative;
+    if (hints.weekShift === null && rawHints.weekShift !== null) {
+      hints.weekShift = rawHints.weekShift;
     }
   }
 
