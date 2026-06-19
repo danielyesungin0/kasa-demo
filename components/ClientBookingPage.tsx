@@ -53,7 +53,11 @@ import { cn } from "@/lib/cn";
 import { track } from "@/lib/analytics";
 import { detectUnsupportedService } from "@/lib/unsupported-services";
 import { decideGuidancePresentation } from "@/lib/ai/guidance-presentation";
-import { categoryBrowseOptions } from "@/lib/ai/category-browse";
+import {
+  categoryBrowseOptions,
+  detectBareCategory,
+  bookableInCategory,
+} from "@/lib/ai/category-browse";
 import { normalizeTimePreferenceLocale } from "@/lib/ai/locale-normalize";
 
 /* -------------------------------------------------------------------------- */
@@ -1509,12 +1513,15 @@ export function ClientBookingPage({
     }
 
     // Book / add_services / switch_service with strong tags — the parser
-    // is confident, no need to bother AI.
+    // is confident, no need to bother AI. A pinned comboServiceId (e.g.
+    // "straightening perm", "keratin treatment") is ALSO confident even with
+    // no tags — it resolved a specific service, so book it directly rather than
+    // falling through to the bare-category chooser or the AI.
     const detIsConfidentBook =
       (detIntent.kind === "book" ||
         detIntent.kind === "switch_service" ||
         detIntent.kind === "add_services") &&
-      detIntent.tags.length > 0;
+      (detIntent.tags.length > 0 || detIntent.comboServiceId !== null);
     if (detIsConfidentBook) {
       dispatch(detIntent);
       return;
@@ -1553,6 +1560,42 @@ export function ClientBookingPage({
       });
       showSlots(ranked, ranked[0]?.dateKey ?? null);
       return;
+    }
+
+    // Bare category word the parser tagged weakly ("treatment", "any colors?")
+    // — show the same cards chooser as the confident categories, so EVERY
+    // category browse looks identical. Runs before the AI fallback (which would
+    // otherwise produce a differently-shaped, verbose reply).
+    //
+    // CRITICAL: only when the parser did NOT resolve a specific service. A
+    // message like "straightening perm" / "keratin treatment" contains a
+    // category word but the parser pins a comboServiceId — that's a specific
+    // booking and must go straight through, never to the chooser.
+    const parserPinnedSpecific =
+      detIntent.kind === "book" &&
+      (detIntent.comboServiceId !== null ||
+        detIntent.lengthHint !== null ||
+        detIntent.permStyle !== null ||
+        detIntent.colorDirection !== null);
+    if (!midBooking && !parserPinnedSpecific) {
+      const bareCat = detectBareCategory(trimmed);
+      if (bareCat) {
+        const opts = bookableInCategory(bareCat, SERVICES);
+        if (opts.length >= 2) {
+          dispatch({
+            kind: "book",
+            rawText: trimmed,
+            tags: [bareCat as IntentTag],
+            lengthHint: null,
+            permStyle: null,
+            colorDirection: null,
+            timeHints: emptyHints(),
+            confidence: "high",
+            comboServiceId: null,
+          });
+          return;
+        }
+      }
     }
 
     // Low-signal — call AI to interpret.
@@ -1969,29 +2012,40 @@ export function ClientBookingPage({
    * normal single-service recommendation). Category-agnostic — works for
    * perm/treatment/color/haircut alike.
    */
+  /** Friendly plural noun for the chooser intro ("perms", "treatments"). */
+  function categoryNoun(category: string, count: number): string {
+    const map: Record<string, string> = {
+      Perm: "perms",
+      Treatment: "treatments",
+      Color: "color options",
+      Haircut: "haircut options",
+      Manicure: "manicures",
+      Pedicure: "pedicures",
+    };
+    const plural = map[category] ?? `${category.toLowerCase()} options`;
+    return count <= 1 ? plural.replace(/s$/, "") : plural;
+  }
+
   function maybeCategoryBrowseChooser(
-    intent: Extract<Intent, { kind: "book" | "switch_service" }>,
-    hasClarifier: boolean
+    intent: Extract<Intent, { kind: "book" | "switch_service" }>
   ): { question: string; services: Service[] } | null {
     const options = categoryBrowseOptions(
       {
+        rawText: intent.rawText,
         tags: intent.tags,
         comboServiceId: intent.comboServiceId,
         lengthHint: intent.lengthHint,
         permStyle: intent.permStyle,
         colorDirection: intent.colorDirection,
-        hasClarifier,
       },
       SERVICES
     );
     if (!options) return null;
 
-    const category = options[0].category;
-    const noun = String(category).toLowerCase();
-    const question =
-      category === "Perm"
-        ? `${sName()} offers a few different perms. Here are the options 👇\n\nWant me to walk you through the differences, or do you already know which one you're after?`
-        : `${sName()} offers a few ${noun} options. Here they are 👇\n\nTell me a bit about what you're going for, or tap one to see times. Happy to explain the differences too.`;
+    // ONE consistent shape for every category: a short intro, then the cards
+    // (which already show price + duration — so we DON'T repeat them here).
+    const noun = categoryNoun(options[0].category, options.length);
+    const question = `${sName()} offers a few ${noun} 👇`;
 
     return { question, services: options };
   }
@@ -2000,26 +2054,17 @@ export function ClientBookingPage({
     intent: Extract<Intent, { kind: "book" | "switch_service" }>,
     clarificationKey?: string
   ) {
-    if (intent.kind === "book" && intent.confidence === "low") {
-      // Context-aware fallback — never "Hmm, I'm not totally sure"
-      handleUnknown({ kind: "unknown", rawText: intent.rawText });
-      return;
-    }
-
     // ── BARE CATEGORY BROWSE — don't assume a single service ────────────────
-    // When the user names just ONE category with no specifying detail ("perm",
-    // "treatment", "color") and that category has SEVERAL distinct services,
-    // we must NOT silently pre-pick a "closest match". Show them what's in the
-    // category as a tappable list and ask what they're after — they can then
-    // pick one, or ask a follow-up ("what's the difference between those?").
-    // Like every other service, options first, questions encouraged.
-    //
-    // A dedicated clarifying question (e.g. haircut length, color direction)
-    // is a BETTER experience than a raw list, so it wins — the browse-chooser
-    // only fires for categories with no clarifier (perm, treatment).
-    const hasClarifier =
-      !clarificationKey && getClarifyingQuestion(intent, context) !== null;
-    const browseChooser = maybeCategoryBrowseChooser(intent, hasClarifier);
+    // When the user names just a CATEGORY with no specifying detail ("perm",
+    // "treatment", "color", "haircut"), show the category's services as cards
+    // with a short intro — ONE consistent pattern for every category. This runs
+    // FIRST: before the low-confidence fallback (so a bare "treatment" the
+    // parser tagged weakly still gets the cards instead of a generic reply) and
+    // before the button-clarifiers (short/long, root/full) so the experience is
+    // uniform — cards everywhere.
+    const browseChooser = clarificationKey
+      ? null
+      : maybeCategoryBrowseChooser(intent);
     if (browseChooser) {
       pushTurns(
         {
@@ -2034,6 +2079,13 @@ export function ClientBookingPage({
           recommendedId: null,
         }
       );
+      return;
+    }
+
+    // Low-confidence and NOT a recognizable category browse → context-aware
+    // fallback (never "Hmm, I'm not totally sure").
+    if (intent.kind === "book" && intent.confidence === "low") {
+      handleUnknown({ kind: "unknown", rawText: intent.rawText });
       return;
     }
 
