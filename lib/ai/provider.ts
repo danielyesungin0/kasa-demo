@@ -748,8 +748,9 @@ Manage-action rules — set when the user is talking about an EXISTING appointme
 - New booking requests ("I want to book", "I need a haircut") → manageAction=null.
 - When manageAction is set, set intent="booking" or "unknown" depending on whether the user also asked something else. The chat routes manage actions before service resolution.
 
-Multi-service:
-- "color and haircut", "haircut + perm" → multiServiceRequest=true, list ALL matching service ids in recommendedServiceIds.
+Multi-service (ONLY for booking SEVERAL services TOGETHER — never for comparisons):
+- multiServiceRequest=true means the client wants to BOOK two or more DIFFERENT services in one visit: "color AND a haircut", "haircut + perm", "can I get a treatment with my cut". List ALL the matching ids in recommendedServiceIds.
+- DO NOT set multiServiceRequest=true when the client is COMPARING or CHOOSING between options ("what's the difference between all the perms?", "which one should I get?", "what are my options?"). That is a question — use intent="consultation" or "service_guidance", list the options' ids so they can pick ONE, and keep multiServiceRequest=false. Listing several ids to compare is NOT a request to book all of them.
 
 Confidence guide:
 - 0.9+: clear request matching one service and (optionally) a clear time.

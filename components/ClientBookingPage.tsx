@@ -52,6 +52,7 @@ import {
 import { cn } from "@/lib/cn";
 import { track } from "@/lib/analytics";
 import { detectUnsupportedService } from "@/lib/unsupported-services";
+import { decideGuidancePresentation } from "@/lib/ai/guidance-presentation";
 import { normalizeTimePreferenceLocale } from "@/lib/ai/locale-normalize";
 
 /* -------------------------------------------------------------------------- */
@@ -2969,47 +2970,64 @@ export function ClientBookingPage({
       return true;
     }
 
-    // Service guidance with at least one valid id → render a recommendation
-    // turn using the existing recommendation rendering. This reuses the same
-    // recommendation bubble that the deterministic parser produces.
-    if (
-      (response.intent === "service_guidance" ||
-        response.intent === "booking") &&
+    // Resolve the returned ids to real services (order preserved).
+    const resolvedServices =
       response.recommendedServiceIds.length > 0
-    ) {
-      const primary = SERVICES.find(
-        (s) => s.id === response.recommendedServiceIds[0]
-      );
-      if (primary) {
-        const additionalIds = response.recommendedServiceIds.slice(1);
-        const additional = additionalIds
-          .map((id) => SERVICES.find((s) => s.id === id))
-          .filter((s): s is Service => Boolean(s));
-        const recommendation: Recommendation = {
-          primary,
-          additionalServices: additional,
-          alternates: [],
-          honestNote: null,
-          reason: "",
-          unresolvedAdditionalCategory: null,
-        };
-        // Commit selectedService so downstream "yes find me times" works.
-        patchContext({
-          lastRecommendedService: primary,
-          additionalServices: additional,
-          bookingNotes:
-            additional.length > 0
-              ? `Client also wants: ${additional.map((s) => s.name).join(", ")}. Please confirm timing on the day.`
-              : "",
-        });
-        pushTurn({
-          kind: "recommendation",
-          id: `t-rec-${Date.now()}`,
-          rec: recommendation,
-          ackText: "",
-        });
-        return true;
-      }
+        ? response.recommendedServiceIds
+            .map((id) => SERVICES.find((s) => s.id === id))
+            .filter((s): s is Service => Boolean(s))
+        : [];
+
+    // ANSWER-FIRST, DON'T ASSUME A BOOKING — a single source of truth decides
+    // whether multiple service ids mean "which of these?" (a chooser) or a
+    // genuine multi-service cart. Category-agnostic.
+    const presentation = decideGuidancePresentation({
+      intent: response.intent,
+      resolvedServiceCount: resolvedServices.length,
+      multiServiceRequest: response.multiServiceRequest === true,
+    });
+
+    if (presentation.kind === "options") {
+      // The AI already answered (the reply describes the differences). Show the
+      // options as a SELECTABLE list so the client picks ONE — never a stacked
+      // cart with an "estimated total".
+      pushTurn({
+        kind: "alternates",
+        id: `t-options-${Date.now()}`,
+        services: resolvedServices,
+        recommendedId: null,
+      });
+      return true;
+    }
+
+    if (presentation.kind === "recommendation") {
+      const primary = resolvedServices[0];
+      // additional services (the cart) ONLY for a genuine multi-booking.
+      const additional = presentation.withCart ? resolvedServices.slice(1) : [];
+      const recommendation: Recommendation = {
+        primary,
+        additionalServices: additional,
+        alternates: [],
+        honestNote: null,
+        reason: "",
+        unresolvedAdditionalCategory: null,
+      };
+      // Commit selectedService so downstream "yes find me times" works.
+      patchContext({
+        lastRecommendedService: primary,
+        additionalServices: additional,
+        bookingNotes:
+          additional.length > 0
+            ? `Client also wants: ${additional.map((s) => s.name).join(", ")}. Please confirm timing on the day.`
+            : "",
+      });
+      pushTurn({
+        kind: "recommendation",
+        id: `t-rec-${Date.now()}`,
+        rec: recommendation,
+        ackText: "",
+      });
+      return true;
     }
 
     // Unsupported — Shen doesn't offer this. Offer a quick "Send to Shen"
