@@ -5,6 +5,7 @@ import { PageShell } from "@/components/PageShell";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { Reveal, RevealGroup, RevealItem } from "@/components/Reveal";
 
 const PROFESSIONS = [
   "stylists",
@@ -113,70 +114,68 @@ export default function HomePage() {
 
       {/* ── How it works ──────────────────────────────────────────────────── */}
       <section id="how" className="mt-28 scroll-mt-24 border-t border-ink-100 pt-16">
-        <p className="font-display text-sm uppercase tracking-[0.18em] text-accent">
-          How it works
-        </p>
-        <h2 className="mt-3 font-display text-3xl font-medium tracking-tight text-ink-900 sm:text-4xl">
-          From DM to booked in three steps.
-        </h2>
-        <div className="mt-12 grid gap-10 sm:grid-cols-3">
-          <Step
-            n="01"
-            title="Share your link"
-            body="Drop your Kasa link in your bio or paste it into any DM — wherever clients already reach you."
-          />
-          <Step
-            n="02"
-            title="Clients just chat"
-            body="They ask for what they want in plain language. Your assistant understands, shows real openings, and books in seconds."
-          />
-          <Step
-            n="03"
-            title="You stay focused"
-            body="Confirmed appointments land in your Square calendar. No logins, no app, no back-and-forth."
-          />
-        </div>
+        <Reveal>
+          <p className="font-display text-sm uppercase tracking-[0.18em] text-accent">
+            How it works
+          </p>
+          <h2 className="mt-3 font-display text-3xl font-medium tracking-tight text-ink-900 sm:text-4xl">
+            From DM to booked in three steps.
+          </h2>
+        </Reveal>
+        <RevealGroup className="mt-12 grid gap-10 sm:grid-cols-3">
+          <RevealItem>
+            <Step
+              n="01"
+              title="Share your link"
+              body="Drop your Kasa link in your bio or paste it into any DM — wherever clients already reach you."
+            />
+          </RevealItem>
+          <RevealItem>
+            <Step
+              n="02"
+              title="Clients just chat"
+              body="They ask for what they want in plain language. Your assistant understands, shows real openings, and books in seconds."
+            />
+          </RevealItem>
+          <RevealItem>
+            <Step
+              n="03"
+              title="You stay focused"
+              body="Confirmed appointments land in your Square calendar. No logins, no app, no back-and-forth."
+            />
+          </RevealItem>
+        </RevealGroup>
       </section>
 
       {/* ── What the assistant does ───────────────────────────────────────── */}
       <section className="mt-28 border-t border-ink-100 pt-16">
-        <p className="font-display text-sm uppercase tracking-[0.18em] text-accent">
-          Meet your assistant
-        </p>
-        <h2 className="mt-3 max-w-2xl font-display text-3xl font-medium tracking-tight text-ink-900 sm:text-4xl">
-          It books like your sharpest front desk — in your voice.
-        </h2>
-        <div className="mt-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
-          <Feature
-            title="Understands how people text"
-            body="“haircut tmrw at 130” just works. It reads natural language, typos, and shorthand — no rigid forms."
-          />
-          <Feature
-            title="Speaks your clients' language"
-            body="English, Korean, or a mix — it replies in whatever language they write in, warmly and in your voice."
-          />
-          <Feature
-            title="Shows only real openings"
-            body="Pulls live availability from your Square calendar, so clients only ever see times you can actually take."
-          />
-          <Feature
-            title="Confirms before booking"
-            body="Nothing is booked without the client's say-so. No double-bookings, no surprises on your calendar."
-          />
-          <Feature
-            title="Handles the odd ones"
-            body="Unsupported services, group requests, special asks — it sends you a clean summary instead of guessing."
-          />
-          <Feature
-            title="Reschedule & cancel built in"
-            body="Clients manage their own appointments through the same link, so your DMs stay quiet."
-          />
-        </div>
+        <Reveal>
+          <p className="font-display text-sm uppercase tracking-[0.18em] text-accent">
+            Meet your assistant
+          </p>
+          <h2 className="mt-3 max-w-2xl font-display text-3xl font-medium tracking-tight text-ink-900 sm:text-4xl">
+            It books like your sharpest front desk — in your voice.
+          </h2>
+        </Reveal>
+        <RevealGroup className="mt-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+          {[
+            ["Understands how people text", "“haircut tmrw at 130” just works. It reads natural language, typos, and shorthand — no rigid forms."],
+            ["Speaks your clients' language", "English, Korean, or a mix — it replies in whatever language they write in, warmly and in your voice."],
+            ["Shows only real openings", "Pulls live availability from your Square calendar, so clients only ever see times you can actually take."],
+            ["Confirms before booking", "Nothing is booked without the client's say-so. No double-bookings, no surprises on your calendar."],
+            ["Handles the odd ones", "Unsupported services, group requests, special asks — it sends you a clean summary instead of guessing."],
+            ["Reschedule & cancel built in", "Clients manage their own appointments through the same link, so your DMs stay quiet."],
+          ].map(([title, body]) => (
+            <RevealItem key={title}>
+              <Feature title={title} body={body} />
+            </RevealItem>
+          ))}
+        </RevealGroup>
       </section>
 
       {/* ── Pricing ───────────────────────────────────────────────────────── */}
       <section id="pricing" className="mt-28 scroll-mt-24 border-t border-ink-100 pt-16">
-        <div className="text-center">
+        <Reveal className="text-center">
           <p className="font-display text-sm uppercase tracking-[0.18em] text-accent">
             Pricing
           </p>
@@ -187,9 +186,9 @@ export default function HomePage() {
             Everything included — unlimited bookings, AI chat, and text
             reminders. Cancel anytime.
           </p>
-        </div>
+        </Reveal>
 
-        <div className="mx-auto mt-12 max-w-md">
+        <Reveal delay={0.1} className="mx-auto mt-12 max-w-md">
           <div className="flex flex-col rounded-3xl border border-ink-900 bg-cream-50 p-8 shadow-card ring-1 ring-ink-900">
             <div className="flex items-center justify-between">
               <p className="font-display text-lg font-medium text-ink-900">
@@ -235,18 +234,20 @@ export default function HomePage() {
               Early providers keep this price as we grow.
             </p>
           </div>
-        </div>
+        </Reveal>
       </section>
 
       {/* ── FAQ ───────────────────────────────────────────────────────────── */}
       <section id="faq" className="mt-28 scroll-mt-24 border-t border-ink-100 pt-16">
-        <p className="font-display text-sm uppercase tracking-[0.18em] text-accent">
-          FAQ
-        </p>
-        <h2 className="mt-3 font-display text-3xl font-medium tracking-tight text-ink-900 sm:text-4xl">
-          Questions, answered.
-        </h2>
-        <div className="mt-10 max-w-2xl divide-y divide-ink-100 border-t border-ink-100">
+        <Reveal>
+          <p className="font-display text-sm uppercase tracking-[0.18em] text-accent">
+            FAQ
+          </p>
+          <h2 className="mt-3 font-display text-3xl font-medium tracking-tight text-ink-900 sm:text-4xl">
+            Questions, answered.
+          </h2>
+        </Reveal>
+        <Reveal delay={0.05} className="mt-10 max-w-2xl divide-y divide-ink-100 border-t border-ink-100">
           <Faq
             q="Do my clients need to download an app?"
             a="No. They tap your link and chat right in their browser. Nothing to install, no account to create."
@@ -275,11 +276,11 @@ export default function HomePage() {
             q="Can I change my pricing or cancel?"
             a="Anytime. No contracts, no per-booking fees. Beta providers keep their pricing as we grow."
           />
-        </div>
+        </Reveal>
       </section>
 
       {/* ── Final CTA ─────────────────────────────────────────────────────── */}
-      <section className="mt-28 rounded-3xl border border-ink-100 bg-cream-100/60 px-6 py-14 text-center sm:px-12">
+      <Reveal as="section" className="mt-28 rounded-3xl border border-ink-100 bg-cream-100/60 px-6 py-14 text-center sm:px-12">
         <h2 className="mx-auto max-w-xl font-display text-3xl font-medium tracking-tight text-ink-900 sm:text-4xl">
           Get your booking link in under 3 minutes.
         </h2>
@@ -292,7 +293,7 @@ export default function HomePage() {
         >
           Get started today
         </Link>
-      </section>
+      </Reveal>
 
       <footer className="mt-20 border-t border-ink-100 pt-8 text-sm text-ink-500">
         <p>Kasa · Booking for solo service providers</p>

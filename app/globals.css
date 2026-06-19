@@ -58,6 +58,21 @@ a {
   animation: fade-up 0.4s ease-out both;
 }
 
+/* Respect the OS "reduce motion" setting — disable entrance/transition motion
+   for users who've asked for less movement (accessibility / vestibular). This
+   covers the CSS animations; Framer's <Reveal> handles itself via
+   useReducedMotion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Disable horizontal scrolling globally — prevents accidental sideways
    panning on mobile when an off-canvas element overflows. */
 html, body {
