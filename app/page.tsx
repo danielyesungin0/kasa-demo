@@ -176,62 +176,66 @@ export default function HomePage() {
 
       {/* ── Pricing ───────────────────────────────────────────────────────── */}
       <section id="pricing" className="mt-28 scroll-mt-24 border-t border-ink-100 pt-16">
-        <p className="font-display text-sm uppercase tracking-[0.18em] text-accent">
-          Pricing
-        </p>
-        <h2 className="mt-3 font-display text-3xl font-medium tracking-tight text-ink-900 sm:text-4xl">
-          Simple pricing. No per-booking fees.
-        </h2>
-        <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-ink-600">
-          One flat price — book as many clients as you like. Cancel anytime.
-        </p>
-
-        <div className="mt-12 grid gap-5 lg:grid-cols-3">
-          <PlanCard
-            name="Free"
-            price="$0"
-            cadence="forever"
-            tagline="Get your link live and try it out."
-            features={[
-              "Your booking link",
-              "Real Square availability",
-              "Up to 30 AI chats / month",
-              "Reschedule & cancel",
-            ]}
-            cta="Start free"
-          />
-          <PlanCard
-            name="Pro"
-            price="$19"
-            cadence="/ month"
-            tagline="For solo pros booking all day."
-            features={[
-              "Everything in Free",
-              "Unlimited AI booking chats",
-              "Multilingual replies (EN / KO / 中文)",
-              "Smart handoff summaries",
-              "Priority support",
-            ]}
-            cta="Get started today"
-            featured
-          />
-          <PlanCard
-            name="Studio"
-            price="$39"
-            cadence="/ month"
-            tagline="For higher volume & growing rosters."
-            features={[
-              "Everything in Pro",
-              "Higher usage limits",
-              "Multiple services & locations",
-              "Early access to new features",
-            ]}
-            cta="Get started"
-          />
+        <div className="text-center">
+          <p className="font-display text-sm uppercase tracking-[0.18em] text-accent">
+            Pricing
+          </p>
+          <h2 className="mt-3 font-display text-3xl font-medium tracking-tight text-ink-900 sm:text-4xl">
+            One simple plan. No per-booking fees.
+          </h2>
+          <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-ink-600">
+            Everything included — unlimited bookings, AI chat, and text
+            reminders. Cancel anytime.
+          </p>
         </div>
-        <p className="mt-6 text-[13px] text-ink-400">
-          Prices in USD. Beta pricing — locked in for early providers.
-        </p>
+
+        <div className="mx-auto mt-12 max-w-md">
+          <div className="flex flex-col rounded-3xl border border-ink-900 bg-cream-50 p-8 shadow-card ring-1 ring-ink-900">
+            <div className="flex items-center justify-between">
+              <p className="font-display text-lg font-medium text-ink-900">
+                Kasa Pro
+              </p>
+              <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-accent">
+                Beta pricing
+              </span>
+            </div>
+            <div className="mt-4 flex items-baseline gap-1.5">
+              <span className="font-display text-5xl font-medium text-ink-900">
+                $29
+              </span>
+              <span className="text-sm text-ink-500">/ month</span>
+            </div>
+            <p className="mt-2 text-[14px] leading-relaxed text-ink-600">
+              Built for solo pros who book all day. One flat price — no matter
+              how many clients you take.
+            </p>
+            <ul className="mt-6 space-y-2.5 text-[14.5px] text-ink-700">
+              {[
+                "Your own booking link",
+                "Unlimited AI booking chats",
+                "Real-time Square availability",
+                "Confirmation + reminder texts",
+                "Multilingual replies (EN / KO / 中文)",
+                "Reschedule & cancel for clients",
+                "Smart handoff summaries to you",
+              ].map((f) => (
+                <li key={f} className="flex items-start gap-2">
+                  <Check />
+                  <span>{f}</span>
+                </li>
+              ))}
+            </ul>
+            <Link
+              href="/setup"
+              className="mt-8 inline-flex min-h-[48px] items-center justify-center rounded-full bg-ink-900 px-5 py-3.5 text-[15px] font-medium text-cream-50 transition hover:bg-ink-800 active:scale-[0.97]"
+            >
+              Get started today
+            </Link>
+            <p className="mt-4 text-center text-[12.5px] text-ink-400">
+              Early providers keep this price as we grow.
+            </p>
+          </div>
+        </div>
       </section>
 
       {/* ── FAQ ───────────────────────────────────────────────────────────── */}
@@ -258,6 +262,10 @@ export default function HomePage() {
           <Faq
             q="What languages does it speak?"
             a="It replies in the language your client writes in — English, Korean, and Simplified Chinese today, with more on the way."
+          />
+          <Faq
+            q="Do clients get reminders?"
+            a="Yes — included. After booking, your client gets a confirmation text, plus a reminder before the appointment with a tap to reschedule or cancel. Fewer no-shows, no extra work for you."
           />
           <Faq
             q="What if a client asks for something I don't offer?"
@@ -318,70 +326,6 @@ function Feature({ title, body }: { title: string; body: string }) {
         {title}
       </h3>
       <p className="mt-2 text-[14.5px] leading-relaxed text-ink-600">{body}</p>
-    </div>
-  );
-}
-
-function PlanCard({
-  name,
-  price,
-  cadence,
-  tagline,
-  features,
-  cta,
-  featured,
-}: {
-  name: string;
-  price: string;
-  cadence: string;
-  tagline: string;
-  features: string[];
-  cta: string;
-  featured?: boolean;
-}) {
-  return (
-    <div
-      className={
-        "flex flex-col rounded-3xl border p-7 " +
-        (featured
-          ? "border-ink-900 bg-cream-50 shadow-card ring-1 ring-ink-900"
-          : "border-ink-100 bg-cream-50")
-      }
-    >
-      <div className="flex items-center justify-between">
-        <p className="font-display text-lg font-medium text-ink-900">{name}</p>
-        {featured && (
-          <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-accent">
-            Most popular
-          </span>
-        )}
-      </div>
-      <div className="mt-4 flex items-baseline gap-1.5">
-        <span className="font-display text-4xl font-medium text-ink-900">
-          {price}
-        </span>
-        <span className="text-sm text-ink-500">{cadence}</span>
-      </div>
-      <p className="mt-2 text-[14px] leading-relaxed text-ink-600">{tagline}</p>
-      <ul className="mt-6 space-y-2.5 text-[14px] text-ink-700">
-        {features.map((f) => (
-          <li key={f} className="flex items-start gap-2">
-            <Check />
-            <span>{f}</span>
-          </li>
-        ))}
-      </ul>
-      <Link
-        href="/setup"
-        className={
-          "mt-7 inline-flex min-h-[46px] items-center justify-center rounded-full px-5 py-3 text-[14.5px] font-medium transition active:scale-[0.97] " +
-          (featured
-            ? "bg-ink-900 text-cream-50 hover:bg-ink-800"
-            : "border border-ink-200 text-ink-900 hover:border-ink-300")
-        }
-      >
-        {cta}
-      </Link>
     </div>
   );
 }
@@ -458,11 +402,29 @@ function ChatPreview() {
             <PreviewChip>2:00 PM</PreviewChip>
             <PreviewChip>2:30 PM</PreviewChip>
           </div>
-          <Bubble side="user">do you do balayage?</Bubble>
+          <Bubble side="user">perfect, let&apos;s do 1:30</Bubble>
           <Bubble side="bot">
-            That isn&apos;t something Shen offers — want me to send her a quick
-            message so she can help directly?
+            Booked! See you tomorrow at 1:30 PM 💛
           </Bubble>
+
+          {/* Confirmation → calendar. Our own generic visual — no third-party
+              branding/screenshots — illustrating that the booking lands on the
+              provider's calendar. */}
+          <div className="mt-1 rounded-2xl border border-success/30 bg-success-soft/40 p-3.5">
+            <div className="flex items-center gap-2">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-success text-cream-50">
+                <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M5 12.5L10 17.5L19 7.5" />
+                </svg>
+              </span>
+              <p className="text-[13px] font-medium text-ink-900">
+                Booking confirmed
+              </p>
+            </div>
+            <p className="mt-1.5 pl-7 text-[12.5px] leading-snug text-ink-600">
+              Added to your calendar · client gets a text reminder before it.
+            </p>
+          </div>
         </div>
       </div>
     </div>
