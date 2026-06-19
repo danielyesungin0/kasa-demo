@@ -90,6 +90,9 @@ type AssistantTurn =
         | "cached";
     }
   | { kind: "user-text"; id: string; text: string }
+  // Transient "Shen is typing…" bubble shown while a response is being fetched.
+  // Removed as soon as the real turn renders. `label` is context-aware copy.
+  | { kind: "typing"; id: string; label: string }
   | {
       kind: "clarify";
       id: string;
@@ -527,6 +530,12 @@ export function ClientBookingPage({
 
   const [stage, setStage] = useState<Stage>("home");
 
+  // Entry screen vs assistant chat. Defaults to false (entry screen visible) so
+  // confident clients can fast-book without engaging the chat. "Help me choose"
+  // or typing flips it on; resetConversation() flips it back to entry. Declared
+  // here (above the history effects) because the history model tracks it.
+  const [assistantOpen, setAssistantOpen] = useState(false);
+
   // ── Native browser back/forward ────────────────────────────────────────────
   // The booking flow is a single client component with a local `stage`, so the
   // browser's back button did nothing. We mirror stage transitions into the
@@ -534,55 +543,64 @@ export function ClientBookingPage({
   // fires popstate, which we map back to the previous stage. A ref guard stops
   // the popstate-driven setStage from pushing again (which would loop).
   const isPoppingRef = useRef(false);
-  const prevStageRef = useRef<Stage>("home");
+
+  // History model: a "view" = { stage, chatOpen }. The public entry screen is
+  // the BASE (chatOpen:false, stage:home). Opening chat pushes a layer; deeper
+  // stages push further. Back walks layers down: deep stage → base chat → public
+  // entry — so the user is never trapped inside chat (the old bug: chat-open
+  // wasn't in history, so Back from the base chat did nothing).
+  const prevViewRef = useRef<{ stage: Stage; chatOpen: boolean }>({ stage: "home", chatOpen: false });
 
   useEffect(() => {
-    // Seed the initial history entry so the first push has somewhere to go back to.
-    if (typeof window !== "undefined" && !window.history.state?.kasaStage) {
-      window.history.replaceState({ kasaStage: "home" }, "");
+    if (typeof window !== "undefined" && !window.history.state?.kasaView) {
+      window.history.replaceState({ kasaView: { stage: "home", chatOpen: false } }, "");
     }
     function onPop(e: PopStateEvent) {
-      let target: Stage = (e.state?.kasaStage as Stage) ?? "home";
-      // Guard cold-landings: some stages only render with prior context
-      // (selected service/slot). If we'd back into one of those without the
-      // context, fall to home instead of a blank screen. We read the latest
-      // context via a ref so this handler (bound once) isn't stale.
+      const v = (e.state?.kasaView as { stage: Stage; chatOpen: boolean } | undefined) ?? {
+        stage: "home",
+        chatOpen: false,
+      };
+      let targetStage = v.stage;
+      // Cold-land guard: stages that need prior context fall to home if missing.
       const needsContext: Stage[] = ["time", "details", "review", "reschedule-review", "confirmed"];
-      if (needsContext.includes(target) && !contextRef.current.selectedService && !contextRef.current.lastRecommendedService) {
-        target = "home";
+      if (
+        needsContext.includes(targetStage) &&
+        !contextRef.current.selectedService &&
+        !contextRef.current.lastRecommendedService
+      ) {
+        targetStage = "home";
       }
-      isPoppingRef.current = true; // suppress the push that the stage effect would do
-      setStage(target);
+      isPoppingRef.current = true; // suppress the push the view effect would do
+      setStage(targetStage);
+      setAssistantOpen(v.chatOpen);
     }
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
   useEffect(() => {
-    // Reflect stage changes into history — but not when the change CAME FROM a
-    // back/forward (popstate), or we'd push a duplicate and break the stack.
+    // Reflect (stage, assistantOpen) changes into history — except when the
+    // change came FROM a back/forward (popstate), which would double-push.
     if (isPoppingRef.current) {
       isPoppingRef.current = false;
-      prevStageRef.current = stage;
+      prevViewRef.current = { stage, chatOpen: assistantOpen };
       return;
     }
-    if (stage === prevStageRef.current) return;
+    const prev = prevViewRef.current;
+    if (prev.stage === stage && prev.chatOpen === assistantOpen) return;
     if (typeof window !== "undefined") {
-      // home is the base; deeper stages push so back returns to the prior one.
-      if (stage === "home") {
-        window.history.replaceState({ kasaStage: "home" }, "");
+      const view = { stage, chatOpen: assistantOpen };
+      // The public base (entry, chat closed, home stage) is replaceState; every
+      // deeper view (chat open, or a non-home stage) pushes so Back peels it off.
+      if (stage === "home" && !assistantOpen) {
+        window.history.replaceState({ kasaView: view }, "");
       } else {
-        window.history.pushState({ kasaStage: stage }, "");
+        window.history.pushState({ kasaView: view }, "");
       }
     }
-    prevStageRef.current = stage;
-  }, [stage]);
+    prevViewRef.current = { stage, chatOpen: assistantOpen };
+  }, [stage, assistantOpen]);
 
-  // Entry screen vs assistant chat. Defaults to false (entry screen visible)
-  // so confident clients can fast-book without engaging the chat. Tapping
-  // "Help me choose" or typing in the entry-screen composer flips this on.
-  // resetConversation() flips it back so we land on entry again.
-  const [assistantOpen, setAssistantOpen] = useState(false);
 
   // Category fast path: when the user taps a category chip on the entry
   // screen, we set this and route to the service picker stage.
@@ -773,6 +791,31 @@ export function ClientBookingPage({
 
   function pushTurn(turn: AssistantTurn) {
     setTurns((prev) => [...prev, turn]);
+  }
+
+  // ── Typing indicator ───────────────────────────────────────────────────────
+  // Show a transient "Shen is typing…" bubble while a response is in flight, so
+  // the chat feels responsive on slower (Claude ~2-3s) replies. No artificial
+  // delay — it only exists for the duration of the real fetch. Context-aware
+  // copy by what the user is doing.
+  const TYPING_ID = "t-typing";
+  function showTyping(label = "Thinking…") {
+    setTurns((prev) => [
+      ...prev.filter((t) => t.kind !== "typing"),
+      { kind: "typing", id: `${TYPING_ID}-${Date.now()}`, label },
+    ]);
+  }
+  function clearTyping() {
+    setTurns((prev) => prev.filter((t) => t.kind !== "typing"));
+  }
+  // Pick context copy from the raw message (cheap heuristic; the response path
+  // still does the real classification — this is just the waiting label).
+  function typingLabelFor(message: string): string {
+    const t = message.toLowerCase();
+    if (/\b(reschedul|move|change\s+my|another\s+spot)\b/.test(t)) return "Looking for another spot…";
+    if (/\b(book|grab|take|reserve|hold|confirm|yes)\b/.test(t)) return "Holding that time…";
+    if (/\b(time|open|availab|slot|when|free|appointment|tomorrow|today|week|am|pm|\d)\b/.test(t)) return "Checking my openings…";
+    return "Thinking…";
   }
 
   function pushTurns(...newTurns: AssistantTurn[]) {
@@ -2752,6 +2795,9 @@ export function ClientBookingPage({
       };
     }
 
+    // Show the "Shen is typing…" bubble for the duration of the real fetch.
+    // Cleared in finally so it never lingers, on any exit path.
+    showTyping(typingLabelFor(message));
     try {
       // Send up to ~8 recent turns as conversation context. Filter to plain
       // user/bot text so the model isn't confused by structured turns.
@@ -2778,6 +2824,8 @@ export function ClientBookingPage({
       return data;
     } catch {
       return null;
+    } finally {
+      clearTyping();
     }
   }
 
@@ -6765,14 +6813,15 @@ function MobileChatShell(props: MobileChatShellProps) {
             </p>
           </div>
         </div>
-        {/* Need Shen directly? — opens a handoff card so the user can send
-            a quick message to the stylist without continuing the chat. */}
+        {/* "Message {stylist}" — opens a handoff card so the user can send a
+            quick message to the stylist. Renamed from "Need {stylist}?" which
+            misleadingly implied talking to her directly; this opens a form. */}
         <button
           type="button"
           onClick={onOpenHandoff}
           className="shrink-0 rounded-full px-2.5 py-2 text-[11px] font-medium text-ink-600 hover:text-ink-900 active:bg-cream-100"
         >
-          Need {stylistName}?
+          Message {stylistName}
         </button>
         {conversationStarted && (
           <button
@@ -7056,15 +7105,10 @@ function AssistantBlock(props: HomeProps) {
             !conversationStarted && "hidden"
           )}
         >
-          {serviceLocked && (
-            <button
-              type="button"
-              onClick={onChangeService}
-              className="hidden whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-medium text-ink-500 hover:bg-cream-100 hover:text-ink-900 lg:inline-flex"
-            >
-              Change service
-            </button>
-          )}
+          {/* "Change service" removed from the header — as a persistent header
+              action it felt like a jarring reset mid-chat. Service changes
+              happen conversationally ("actually a color") or via the composer's
+              contextual "Change service" affordance. */}
           <button
             type="button"
             onClick={onResetConversation}
@@ -7253,6 +7297,10 @@ function TurnRow({
         <DebugSourceLabel source={turn.source} />
       </div>
     );
+  }
+
+  if (turn.kind === "typing") {
+    return <TypingBubble label={personalize(turn.label)} />;
   }
   if (turn.kind === "user-text") return <UserBubble>{turn.text}</UserBubble>;
 
@@ -7873,6 +7921,24 @@ function BotBubble({ children }: { children: React.ReactNode }) {
   return (
     <div className="max-w-[88%] whitespace-pre-line break-words rounded-2xl rounded-tl-sm bg-cream-100 px-3.5 py-2.5 text-[14.5px] leading-relaxed text-ink-800 animate-fade-up">
       {children}
+    </div>
+  );
+}
+
+/**
+ * Transient "Shen is typing…" bubble: context-aware label + three pulsing dots.
+ * Matches BotBubble styling so it reads as Shen composing a reply. Pure
+ * presentation — shown only while a response is in flight.
+ */
+function TypingBubble({ label }: { label: string }) {
+  return (
+    <div className="flex max-w-[88%] items-center gap-2 rounded-2xl rounded-tl-sm bg-cream-100 px-3.5 py-2.5 animate-fade-up">
+      <span className="flex gap-1" aria-hidden>
+        <span className="h-1.5 w-1.5 rounded-full bg-ink-400 animate-pulse [animation-delay:0ms]" />
+        <span className="h-1.5 w-1.5 rounded-full bg-ink-400 animate-pulse [animation-delay:150ms]" />
+        <span className="h-1.5 w-1.5 rounded-full bg-ink-400 animate-pulse [animation-delay:300ms]" />
+      </span>
+      <span className="text-[13px] italic text-ink-500">{label}</span>
     </div>
   );
 }
