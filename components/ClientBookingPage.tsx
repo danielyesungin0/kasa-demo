@@ -7367,18 +7367,57 @@ function TurnRow({
           <BotBubble>{personalize(turn.intro)}</BotBubble>
         )}
 
-        {/* Hero (collapsed): recommended times — time is the visual focus. */}
-        {!expanded && (
-          <div className="grid grid-cols-3 gap-2">
-            {(recommended ?? turn.slots).map((slot) => (
-              <TimeSlotCard
-                key={slot.id}
-                slot={slot}
-                onClick={() => onSlotPick(slot)}
-              />
-            ))}
-          </div>
-        )}
+        {/* Hero (collapsed): RECOMMENDATION — visually distinct from the
+            calendar grid. Date stated ONCE as a heading; time-first pills below
+            (no per-card date, so no truncation). Responsive 2→3→4 columns. */}
+        {!expanded && (() => {
+          const recos = recommended ?? turn.slots;
+          // Date heading only when all recommendations share one day (the
+          // common case). When they span days, omit it and let pills carry a
+          // tiny date — avoids a heading that lies.
+          const oneDay = recos.length > 0 && recos.every((s) => s.dateKey === recos[0].dateKey);
+          const headingDay = oneDay
+            ? `${DAY_FULL_FROM_SHORT[recos[0].dayLabel] ?? recos[0].dayLabel} · ${recos[0].dateLabel}`
+            : null;
+          // "near"/range get the "Recommended for you" label; an exact "hit"
+          // (single open slot) reads better without it (the intro says yes).
+          const showRecoLabel = turn.exactStatus !== "hit";
+          return (
+            <div className="rounded-2xl border border-accent/25 bg-accent-soft/30 p-4">
+              {headingDay && (
+                <p className="font-display text-[15px] font-medium text-ink-900">
+                  {headingDay}
+                </p>
+              )}
+              {showRecoLabel && (
+                <p className="mt-0.5 text-[11px] uppercase tracking-[0.14em] text-accent-dark/80">
+                  Recommended for you
+                </p>
+              )}
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+                {recos.map((slot) => (
+                  <button
+                    key={slot.id}
+                    type="button"
+                    onClick={() => onSlotPick(slot)}
+                    className="flex min-h-[52px] items-center justify-center rounded-xl border border-accent/30 bg-cream-50 px-3 py-3 font-display text-lg font-medium text-ink-900 shadow-soft transition hover:border-accent/60 hover:shadow-md active:scale-[0.98]"
+                  >
+                    {oneDay ? (
+                      slot.timeLabel
+                    ) : (
+                      <span className="flex flex-col items-center leading-tight">
+                        <span className="text-[10px] uppercase tracking-wide text-ink-400">
+                          {slot.dayLabel} · {slot.dateLabel}
+                        </span>
+                        <span>{slot.timeLabel}</span>
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Expanded "See all": grouped Date → part-of-day → time-only chips.
             Date is in the header (once), so cards never repeat/truncate it. */}
