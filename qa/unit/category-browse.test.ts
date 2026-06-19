@@ -3,6 +3,7 @@ import {
   categoryBrowseOptions,
   detectBareCategory,
   bookableInCategory,
+  permsForGoal,
 } from "@/lib/ai/category-browse";
 import type { Service } from "@/lib/types";
 
@@ -24,12 +25,12 @@ const svc = (over: Partial<Service> & { id: string; category: Service["category"
 });
 
 const CATALOG: Service[] = [
-  svc({ id: "perm-bang", category: "Perm" }),
-  svc({ id: "perm-womens-regular", category: "Perm" }),
-  svc({ id: "perm-womens-digital", category: "Perm", status: "consultation" }),
-  svc({ id: "perm-straightening", category: "Perm" }),
-  svc({ id: "perm-cut-down", category: "Perm" }),
-  svc({ id: "perm-mens-cut", category: "Perm" }),
+  svc({ id: "perm-bang", name: "Bang Perm", category: "Perm" }),
+  svc({ id: "perm-womens-regular", name: "Women's Regular Perm", category: "Perm" }),
+  svc({ id: "perm-womens-digital", name: "Women's Digital Perm", category: "Perm", status: "consultation" }),
+  svc({ id: "perm-straightening", name: "Straightening Perm", category: "Perm" }),
+  svc({ id: "perm-cut-down", name: "Hair Cut + Down Perm", category: "Perm" }),
+  svc({ id: "perm-mens-cut", name: "Men's Perm + Hair Cut", category: "Perm" }),
   svc({ id: "treat-headspa", category: "Treatment" }),
   svc({ id: "treat-keratin", category: "Treatment" }),
   svc({ id: "treat-milbon", category: "Treatment" }),
@@ -111,6 +112,33 @@ describe("categoryBrowseOptions — does NOT fire (book directly / other path)",
   it("a single-service category → null", () => {
     const oneCut: Service[] = [svc({ id: "only-cut", category: "Haircut" })];
     expect(categoryBrowseOptions({ rawText: "haircut", tags: ["Haircut"] }, oneCut)).toBeNull();
+  });
+});
+
+describe("permsForGoal — goal narrows the 6 perms client-friendly", () => {
+  it("curl → standalone curl perms (regular + digital), no bangs/straighten/combo", () => {
+    const ids = permsForGoal("curl", CATALOG).map((s) => s.id).sort();
+    expect(ids).toEqual(["perm-womens-digital", "perm-womens-regular"]);
+  });
+  it("straighten → just the straightening perm", () => {
+    expect(permsForGoal("straighten", CATALOG).map((s) => s.id)).toEqual([
+      "perm-straightening",
+    ]);
+  });
+  it("bangs → just the bang perm", () => {
+    expect(permsForGoal("bangs", CATALOG).map((s) => s.id)).toEqual(["perm-bang"]);
+  });
+  it("with-haircut → the two combo perms", () => {
+    const ids = permsForGoal("with-haircut", CATALOG).map((s) => s.id).sort();
+    expect(ids).toEqual(["perm-cut-down", "perm-mens-cut"]);
+  });
+  it("every perm is reachable from exactly one goal", () => {
+    const all = new Set(bookableInCategory("Perm", CATALOG).map((s) => s.id));
+    const reached = new Set<string>();
+    for (const g of ["curl", "straighten", "bangs", "with-haircut"] as const) {
+      for (const s of permsForGoal(g, CATALOG)) reached.add(s.id);
+    }
+    expect([...reached].sort()).toEqual([...all].sort());
   });
 });
 

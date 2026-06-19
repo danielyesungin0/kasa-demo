@@ -62,6 +62,48 @@ export function detectBareCategory(rawText: string): ServiceCategory | null {
   return null;
 }
 
+/* -------------------------------------------------------------------------- */
+/* Perm narrowing — 6 perms is a lot, so ask a goal question first.            */
+/* -------------------------------------------------------------------------- */
+
+export type PermGoal = "curl" | "straighten" | "bangs" | "with-haircut";
+
+export const PERM_GOAL_OPTIONS: { label: string; key: string; goal: PermGoal }[] = [
+  { label: "Add curl / waves", key: "perm-goal:curl", goal: "curl" },
+  { label: "Straighten my hair", key: "perm-goal:straighten", goal: "straighten" },
+  { label: "Just my bangs", key: "perm-goal:bangs", goal: "bangs" },
+  { label: "Perm + a haircut", key: "perm-goal:with-haircut", goal: "with-haircut" },
+];
+
+/**
+ * Given a chosen perm goal, return the matching perms from the catalog. Maps a
+ * client-friendly intent ("add curl") to the right SKUs without making them
+ * learn perm jargon.
+ */
+export function permsForGoal(goal: PermGoal, catalog: Service[]): Service[] {
+  const perms = bookableInCategory("Perm", catalog);
+  const name = (s: Service) => s.name.toLowerCase();
+  switch (goal) {
+    case "straighten":
+      return perms.filter((s) => name(s).includes("straighten"));
+    case "bangs":
+      return perms.filter((s) => name(s).includes("bang"));
+    case "with-haircut":
+      // The combos bundle a haircut ("+ Hair Cut" / "Hair Cut +").
+      return perms.filter((s) => /hair\s*cut/.test(name(s)));
+    case "curl":
+    default:
+      // Standalone curl perms: regular / digital, excluding bangs, combos,
+      // and straightening.
+      return perms.filter(
+        (s) =>
+          !name(s).includes("straighten") &&
+          !name(s).includes("bang") &&
+          !/hair\s*cut/.test(name(s))
+      );
+  }
+}
+
 /** Bookable (non-hidden) services in a category, popular first. */
 export function bookableInCategory(
   category: ServiceCategory,

@@ -57,6 +57,9 @@ import {
   categoryBrowseOptions,
   detectBareCategory,
   bookableInCategory,
+  permsForGoal,
+  PERM_GOAL_OPTIONS,
+  type PermGoal,
 } from "@/lib/ai/category-browse";
 import { normalizeTimePreferenceLocale } from "@/lib/ai/locale-normalize";
 
@@ -2028,7 +2031,10 @@ export function ClientBookingPage({
 
   function maybeCategoryBrowseChooser(
     intent: Extract<Intent, { kind: "book" | "switch_service" }>
-  ): { question: string; services: Service[] } | null {
+  ):
+    | { mode: "cards"; question: string; services: Service[] }
+    | { mode: "perm-goal"; question: string }
+    | null {
     const options = categoryBrowseOptions(
       {
         rawText: intent.rawText,
@@ -2042,12 +2048,22 @@ export function ClientBookingPage({
     );
     if (!options) return null;
 
-    // ONE consistent shape for every category: a short intro, then the cards
-    // (which already show price + duration — so we DON'T repeat them here).
+    // PERM has the most options (6) — instead of a long flat list, ask ONE
+    // goal question up front, then show the matching subset. Client-friendly:
+    // they answer about what they want, not perm terminology.
+    if (options[0].category === "Perm") {
+      return {
+        mode: "perm-goal",
+        question: `${sName()} does a few kinds of perm — what are you looking to do?`,
+      };
+    }
+
+    // Every other category: a short intro, then the cards (which already show
+    // price + duration — so we DON'T repeat them here).
     const noun = categoryNoun(options[0].category, options.length);
     const question = `${sName()} offers a few ${noun} 👇`;
 
-    return { question, services: options };
+    return { mode: "cards", question, services: options };
   }
 
   async function handleBookOrSwitch(
@@ -2066,6 +2082,17 @@ export function ClientBookingPage({
       ? null
       : maybeCategoryBrowseChooser(intent);
     if (browseChooser) {
+      if (browseChooser.mode === "perm-goal") {
+        // Ask the goal question first (perm has too many options for a flat
+        // list). The goal buttons resolve to the matching subset on tap.
+        pushTurn({
+          kind: "clarify",
+          id: `t-perm-goal-${Date.now()}`,
+          text: browseChooser.question,
+          options: PERM_GOAL_OPTIONS.map((o) => ({ label: o.label, key: o.key })),
+        });
+        return;
+      }
       pushTurns(
         {
           kind: "bot-text",
@@ -3265,6 +3292,49 @@ export function ClientBookingPage({
       text: opt.label,
     });
     markTurn(turnId, { consumed: true } as Partial<AssistantTurn>);
+
+    // Perm goal chosen — show the matching perms (or book directly if one).
+    if (opt.key.startsWith("perm-goal:")) {
+      const goal = opt.key.slice("perm-goal:".length) as PermGoal;
+      const matches = permsForGoal(goal, SERVICES);
+      if (matches.length === 1) {
+        // Single match → straight to the recommendation/booking flow.
+        const svc = matches[0];
+        patchContext({ lastRecommendedService: svc });
+        pushTurn({
+          kind: "recommendation",
+          id: `t-rec-${Date.now()}`,
+          rec: {
+            primary: svc,
+            additionalServices: [],
+            alternates: [],
+            honestNote: null,
+            reason: "",
+            unresolvedAdditionalCategory: null,
+          },
+          ackText: "",
+        });
+        return;
+      }
+      // Multiple → show just those as cards.
+      pushTurns(
+        {
+          kind: "bot-text",
+          id: `t-perm-sub-q-${Date.now()}`,
+          text:
+            matches.length > 0
+              ? `Here are the options 👇`
+              : `Hmm — tell me a bit more and I'll point you the right way 💛`,
+        },
+        {
+          kind: "alternates",
+          id: `t-perm-sub-${Date.now()}`,
+          services: matches,
+          recommendedId: null,
+        }
+      );
+      return;
+    }
 
     // Manage flow: cancel confirmation
     if (opt.key === "manage-cancel-yes" && pendingAppointment) {
