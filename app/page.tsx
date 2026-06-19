@@ -400,18 +400,18 @@ const LOOP_PAUSE = 2600;
 
 function ChatPreview() {
   const reduce = useReducedMotion();
-  // How many steps are currently visible. Reduced-motion → show them all.
-  const [shown, setShown] = useState(reduce ? CHAT_STEPS.length : 0);
-  // Whether a typing bubble is showing before the next (bot) step.
+  // The chat demo is PRODUCT CONTENT (show-don't-tell), so it always plays.
+  // But for reduce-motion users we make it calmer: soft fade-only (no slide),
+  // slower pacing, and it plays ONCE (no loop) instead of looping forever.
+  const [shown, setShown] = useState(0);
   const [typing, setTyping] = useState(false);
 
   useEffect(() => {
-    if (reduce) return; // no animation; everything already visible
     let timer: ReturnType<typeof setTimeout>;
 
     function schedule(next: number) {
       if (next > CHAT_STEPS.length) {
-        // finished — pause, then restart the loop
+        if (reduce) return; // calm mode: play once, don't loop
         timer = setTimeout(() => {
           setShown(0);
           schedule(1);
@@ -424,8 +424,9 @@ function ChatPreview() {
         setShown(next);
         timer = setTimeout(() => schedule(next + 1), STEP_DELAY[step.kind]);
       };
-      // Show a typing indicator briefly before each bot reply.
-      if (step.kind === "bot") {
+      // Typing indicator before each bot reply (skipped in calm mode — the dots
+      // are themselves motion; a plain pause reads quieter).
+      if (step.kind === "bot" && !reduce) {
         setTyping(true);
         timer = setTimeout(reveal, 850);
       } else {
@@ -465,9 +466,10 @@ function ChatPreview() {
             {CHAT_STEPS.slice(0, shown).map((step, i) => (
               <motion.div
                 key={i}
-                initial={reduce ? false : { opacity: 0, y: 8 }}
+                // Calm mode: fade only (no slide). Normal: gentle fade + rise.
+                initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, ease: "easeOut" }}
+                transition={{ duration: reduce ? 0.5 : 0.3, ease: "easeOut" }}
               >
                 <ChatStepView step={step} />
               </motion.div>
