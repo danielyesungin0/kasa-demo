@@ -1429,6 +1429,29 @@ export function ClientBookingPage({
       detIntent.kind !== "clarification_answer" &&
       isLowSignal
     ) {
+      // ANSWER-FIRST even mid-clarification: if the user asks a real question
+      // about the choice they're being asked to make ("what's the difference
+      // between the two?"), DON'T re-ask "didn't catch that" — that's the exact
+      // trust break. Let the AI answer the question, then re-surface the same
+      // clarification so they can still pick. We keep pendingClarification set
+      // (don't clear it) so the follow-up answer still resolves the service.
+      if (looksLikeConsultationQuestion(trimmed)) {
+        // Give the AI the CONTEXT of what's being compared. The user's "the
+        // two" / "the difference" refers to the pending clarification's options
+        // (e.g. short vs medium-to-long haircut), which aren't in the raw
+        // message. Inline the pending question so the AI grounds its answer in
+        // the actual choice instead of replying generically.
+        const enriched = `${trimmed}\n(They're choosing between options for: "${context.pendingClarification.question}". Answer that specific comparison using the services list.)`;
+        const ai = await fetchChatResponse(enriched);
+        if (ai && ai.reply) {
+          renderChatResponse(ai, trimmed);
+          // Re-show the pending question warmly (soft) — we answered, didn't
+          // fail to understand, so don't say "didn't catch that".
+          reAskClarification({ soft: true });
+          return;
+        }
+        // AI unavailable → fall through to the normal re-ask below.
+      }
       reAskClarification();
       return;
     }
@@ -1656,23 +1679,28 @@ export function ClientBookingPage({
    * Re-ask the most recent clarification with simpler wording. Used when the
    * user's free-text answer didn't match any expected key.
    */
-  function reAskClarification() {
+  function reAskClarification(opts?: { soft?: boolean }) {
+    // After we've just ANSWERED a question (soft), re-pose the choice warmly —
+    // NOT "Sorry, I didn't catch that" (the user asked a valid question; we
+    // heard them fine). Otherwise use the standard didn't-catch reprompt.
+    const lead = opts?.soft ? "So — " : "Sorry, I didn't catch that. ";
     const recent = [...turns].reverse().find(
       (t) => t.kind === "clarify" && !t.consumed
     );
     if (!recent || recent.kind !== "clarify") {
-      // No active clarify turn to repeat — fall back to a gentle prompt
       pushTurn({
         kind: "bot-text",
         id: `t-reprompt-${Date.now()}`,
-        text: `Sorry, I didn't catch that. Could you tap one of the options above, or rephrase?`,
+        text: opts?.soft
+          ? `Which would you like — tap one of the options above?`
+          : `Sorry, I didn't catch that. Could you tap one of the options above, or rephrase?`,
       });
       return;
     }
     pushTurn({
       kind: "bot-text",
       id: `t-reask-${Date.now()}`,
-      text: `Sorry, I didn't catch that. ${simplifyClarification(recent.text)}`,
+      text: `${lead}${simplifyClarification(recent.text)}`,
     });
   }
 
