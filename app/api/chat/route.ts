@@ -12,6 +12,7 @@ import {
   type FAQContext,
 } from "@/lib/ai/deterministic-faq";
 import { detectUnsupportedService } from "@/lib/unsupported-services";
+import { looksLikePersonalJudgment } from "@/lib/personal-judgment";
 import {
   getProviderServices,
   getProviderUnsupportedTerms,
@@ -326,6 +327,14 @@ export async function POST(request: NextRequest) {
     const detectedUnsupported = detectUnsupportedService(message, providerUnsupportedTerms);
     const isHardUnsupported = detectedUnsupported !== null;
 
+    // ESCALATE LAST — deterministic, narrow trigger. The ONLY uncertainty-shaped
+    // reason we hand off: the client is asking for personalized professional
+    // judgment (feasibility on THEIR hair, safety, a guarantee, or a one-session
+    // transformation). Everything else — differences, prices, durations, what's
+    // offered — the assistant answers (the model is told to hedge, not escalate,
+    // when unsure). This replaces the old "when unsure → handoff" behavior.
+    const detectedJudgment = looksLikePersonalJudgment(message);
+
     let effectiveIntent: AIResponse["intent"];
     let effectiveNeedsHandoff: boolean;
     let effectiveHandoffSummary: string | null;
@@ -342,6 +351,17 @@ export async function POST(request: NextRequest) {
       // Replace the reply with a clean, on-brand redirect. The model's
       // reply may have falsely implied we offer the service.
       effectiveReply = `That isn't something ${stylistName} currently offers — I don't want to point you at the wrong service. Want me to send ${stylistName} a quick message so she can let you know directly?`;
+    } else if (detectedJudgment) {
+      // A stylist decision — defer warmly, but keep the conversation grounded:
+      // if the AI already wrote a helpful answer, keep it (it may have given
+      // useful context); we just add the handoff so the client can get Shen's
+      // call. Only swap in the on-brand deferral when the AI didn't say much.
+      effectiveIntent = "handoff";
+      effectiveNeedsHandoff = true;
+      effectiveHandoffSummary = `Client is asking for ${stylistName}'s professional judgment — ${detectedJudgment}. Most recent message: "${message}".`;
+      if (!ai.reply || ai.reply.trim().length < 20) {
+        effectiveReply = `That's something I'd want ${stylistName} to weigh in on directly before I say for sure 💛 — want me to send her your question?`;
+      }
     } else if (isGroup) {
       effectiveIntent = "handoff";
       effectiveNeedsHandoff = true;
