@@ -1,9 +1,11 @@
 /**
  * Provider-agnostic AI wrapper.
  *
- * Today: Groq (free, fast). Tomorrow: swap in Gemini, OpenRouter, etc. by
- * adding another switch arm in callProvider — the rest of the app talks to
- * AIResponse only and doesn't care which provider returned it.
+ * Today: Claude Haiku is the sole active provider. Groq remains in the file as
+ * a dormant escape hatch (only used if AI_PROVIDER=groq is explicitly set) —
+ * it was dropped as the default because its free-tier rate limits degraded the
+ * experience. Tomorrow: swap in another provider by adding a switch arm — the
+ * rest of the app talks to AIResponse only and doesn't care which one ran.
  *
  * Hard rules baked into this layer:
  *   - The AI returns STRUCTURED JSON only. We never render free-form
@@ -180,19 +182,19 @@ const PROVIDERS: Record<ProviderName, ProviderFn> = {
   claude: callClaudeRaw,
 };
 
-/** The safe default. Groq stays the default until AI_PROVIDER explicitly says
- *  otherwise — Shen's beta keeps working with no Claude key present. */
-const DEFAULT_PROVIDER: ProviderName = "groq";
+/** The provider. Claude (Haiku) is the sole active path — Groq was removed as
+ *  the default after its free-tier rate limits degraded both QA and real
+ *  client experience. The Groq code below stays dormant: it is ONLY reachable
+ *  by explicitly setting AI_PROVIDER=groq (an escape hatch), never by default
+ *  and never as an automatic fallback. */
+const DEFAULT_PROVIDER: ProviderName = "claude";
 
 function resolveProviderName(): ProviderName {
   const raw = (process.env.AI_PROVIDER ?? "").trim().toLowerCase();
-  if (raw === "claude") return "claude";
+  // Groq only when EXPLICITLY requested. Anything else (including the common
+  // "claude" / unset) → Claude. There is no silent Groq fallback anymore.
   if (raw === "groq") return "groq";
-  // Unknown / unset → default. Never throw; never silently break the beta.
-  // TODO(per-provider): a future per-stylist override (e.g. Shen on Claude,
-  // others on Groq) would resolve here using the slug/stylist id. Kept as a
-  // single global env switch for now to avoid overbuilding.
-  return DEFAULT_PROVIDER;
+  return "claude";
 }
 
 /**
@@ -211,21 +213,13 @@ export async function callAI(
 
   const primary = resolveProviderName();
 
-  // Try the selected provider; on a real failure (not "not configured"), and
-  // when it isn't already Groq, fall back to Groq as the safety net.
-  const first = await runProvider(primary, ctx, opts);
-  if (first) return first;
+  // Single provider, no cross-provider fallback. (Groq is only used if someone
+  // explicitly sets AI_PROVIDER=groq.) On failure we return null and the chat
+  // route shows its warm "assistant is busy, try again" message with the
+  // handoff escape hatch — same graceful degradation as before.
+  const result = await runProvider(primary, ctx, opts);
+  if (result) return result;
 
-  if (primary !== DEFAULT_PROVIDER) {
-    if (opts.debug) {
-      console.log(`[ai] ${primary} unavailable → falling back to ${DEFAULT_PROVIDER}`);
-    }
-    const fallback = await runProvider(DEFAULT_PROVIDER, ctx, opts);
-    if (fallback) return fallback;
-  }
-
-  // Both failed (or default failed). Null → the chat route shows its warm
-  // "assistant is busy, try again" message with the handoff escape hatch.
   return null;
 }
 
