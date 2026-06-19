@@ -769,6 +769,15 @@ function parseRefineTime(
     /\bany\s+(other|more)\b|\bmore\s+times\b|\banother\b|\bshow\s+more\b|\banything\s+else\b|\bother\s+times\b/.test(
       text
     ) ||
+    // "see all (the) (available) times", "all the times", "show me all times",
+    // "full availability" — when slots are already shown, this means "expand to
+    // everything", NOT a fresh booking request. Without this, a mid-booking
+    // "can I see all the available times" falls through to the AI and restarts
+    // the clarification, losing the selected service.
+    (context.lastShownSlots.length > 0 &&
+      /\b(see|show)\b.*\ball\b.*\btimes?\b|\ball\s+(the\s+)?(available\s+)?times?\b|\bfull\s+availability\b|\ball\s+openings?\b/.test(
+        text
+      )) ||
     (context.lastShownSlots.length > 0 &&
       !context.pendingClarification &&
       /^(yes|yeah|yep|yup|sure|more|ok|okay)\.?$/.test(text.trim()))

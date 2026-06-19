@@ -1376,9 +1376,14 @@ export function ClientBookingPage({
     // ("haircut") starts a fresh intent with empty hints. Persist any
     // time signal into context now so handleBookOrSwitch can merge it
     // into the next confident booking intent.
+    // Persist ANY time signal from a booking message, even when the message
+    // ALSO names a service ("haircut tomorrow at 4"). Previously this only
+    // fired for tags.length===0, so a combined service+time message dropped the
+    // time before the clarification answer could reuse it — the user picked
+    // "Short/barber" and got a generic grid instead of "4pm tomorrow". Now the
+    // hour survives into lastIntentTimeHints for the reconstruction to read.
     if (
       detIntent.kind === "book" &&
-      detIntent.tags.length === 0 &&
       hintsHaveSignal(detIntent.timeHints)
     ) {
       patchContext({ lastIntentTimeHints: detIntent.timeHints });
@@ -2874,12 +2879,10 @@ export function ClientBookingPage({
       const svc = context.lastRecommendedService;
       patchContext({ selectedService: svc });
       const allSlots = await getRealSlots(svc.id, slug);
-      const ranked = rankTimeSlots(allSlots, emptyHints()).slice(0, 6);
-      pushTurn({
-        kind: "bot-text",
-        id: `t-slots-pre-${Date.now()}`,
-        text: `Here are ${sName()}'s best openings for ${svc.name}.`,
-      });
+      // Rank with the REAL requested hints (not emptyHints) so the
+      // recommendation turn honors any day/time the user already stated;
+      // showSlots → buildRecommendation handles selection + limiting.
+      const ranked = rankTimeSlots(allSlots, context.lastIntentTimeHints);
       showSlots(ranked, ranked[0]?.dateKey ?? null);
       return;
     }
@@ -3092,8 +3095,7 @@ export function ClientBookingPage({
       const svc = context.selectedService ?? context.lastRecommendedService;
       if (svc) {
         const allSlots = cachedRealSlots(svc.id, slug);
-        const ranked = rankTimeSlots(allSlots, emptyHints()).slice(0, 6);
-        pushTurn({ kind: "bot-text", id: `t-times-text-${Date.now()}`, text: `Here are ${sName()}'s best openings for ${svc.name}.` });
+        const ranked = rankTimeSlots(allSlots, context.lastIntentTimeHints);
         showSlots(ranked, ranked[0]?.dateKey ?? null);
       }
       return;
@@ -3355,11 +3357,11 @@ export function ClientBookingPage({
       const updated = [...context.additionalServices.filter((s) => s.category !== svc.category), svc];
       patchContext({ additionalServices: updated });
       const allSlots = cachedRealSlots(existingPrimary.id, slug);
-      const ranked = rankTimeSlots(allSlots, emptyHints()).slice(0, 6);
+      const ranked = rankTimeSlots(allSlots, context.lastIntentTimeHints);
       pushTurn({
         kind: "bot-text",
         id: `t-addon-added-${Date.now()}`,
-        text: `Added ${svc.name}. Here are the best openings for your appointment.`,
+        text: `Added ${svc.name}.`,
       });
       showSlots(ranked, ranked[0]?.dateKey ?? null);
       return;
