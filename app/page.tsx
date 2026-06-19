@@ -7,6 +7,18 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Reveal, RevealGroup, RevealItem } from "@/components/Reveal";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import {
+  MessageSquareText,
+  Sparkles,
+  CalendarCheck,
+  ShieldCheck,
+  Users,
+  RefreshCw,
+  Share2,
+  MessagesSquare,
+  CalendarClock,
+  type LucideIcon,
+} from "lucide-react";
 
 const PROFESSIONS = [
   "stylists",
@@ -126,6 +138,7 @@ export default function HomePage() {
         <RevealGroup className="mt-12 grid gap-10 sm:grid-cols-3">
           <RevealItem>
             <Step
+              Icon={Share2}
               n="01"
               title="Share your link"
               body="Drop your Kasa link in your bio or paste it into any DM — wherever clients already reach you."
@@ -133,6 +146,7 @@ export default function HomePage() {
           </RevealItem>
           <RevealItem>
             <Step
+              Icon={MessagesSquare}
               n="02"
               title="Clients just chat"
               body="They ask for what they want in plain language. Your assistant understands, shows real openings, and books in seconds."
@@ -140,6 +154,7 @@ export default function HomePage() {
           </RevealItem>
           <RevealItem>
             <Step
+              Icon={CalendarClock}
               n="03"
               title="You stay focused"
               body="Confirmed appointments land in your Square calendar. No logins, no app, no back-and-forth."
@@ -158,17 +173,19 @@ export default function HomePage() {
             It books like your sharpest front desk — in your voice.
           </h2>
         </Reveal>
-        <RevealGroup className="mt-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
-          {[
-            ["Understands how people text", "“haircut tmrw at 130” just works. It reads natural language, typos, and shorthand — no rigid forms."],
-            ["Warm, on-brand replies", "It chats in clear, friendly English that sounds like you — never robotic, never a rigid form."],
-            ["Shows only real openings", "Pulls live availability from your Square calendar, so clients only ever see times you can actually take."],
-            ["Confirms before booking", "Nothing is booked without the client's say-so. No double-bookings, no surprises on your calendar."],
-            ["Handles the odd ones", "Unsupported services, group requests, special asks — it sends you a clean summary instead of guessing."],
-            ["Reschedule & cancel built in", "Clients manage their own appointments through the same link, so your DMs stay quiet."],
-          ].map(([title, body]) => (
-            <RevealItem key={title}>
-              <Feature title={title} body={body} />
+        <RevealGroup className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {(
+            [
+              [MessageSquareText, "Understands how people text", "“haircut tmrw at 130” just works. It reads natural language, typos, and shorthand — no rigid forms."],
+              [Sparkles, "Warm, on-brand replies", "It chats in clear, friendly English that sounds like you — never robotic, never a rigid form."],
+              [CalendarCheck, "Shows only real openings", "Pulls live availability from your Square calendar, so clients only ever see times you can actually take."],
+              [ShieldCheck, "Confirms before booking", "Nothing is booked without the client's say-so. No double-bookings, no surprises on your calendar."],
+              [Users, "Handles the odd ones", "Unsupported services, group requests, special asks — it sends you a clean summary instead of guessing."],
+              [RefreshCw, "Reschedule & cancel built in", "Clients manage their own appointments through the same link, so your DMs stay quiet."],
+            ] as const
+          ).map(([Icon, title, body]) => (
+            <RevealItem key={title} className="h-full">
+              <Feature Icon={Icon} title={title} body={body} />
             </RevealItem>
           ))}
         </RevealGroup>
@@ -309,11 +326,28 @@ function Dot() {
   );
 }
 
-function Step({ n, title, body }: { n: string; title: string; body: string }) {
+function Step({
+  n,
+  title,
+  body,
+  Icon,
+}: {
+  n: string;
+  title: string;
+  body: string;
+  Icon: LucideIcon;
+}) {
   return (
     <div>
-      <p className="font-display text-sm tracking-[0.14em] text-ink-400">{n}</p>
-      <h3 className="mt-3 font-display text-xl font-medium text-ink-900">
+      <div className="flex items-center gap-3">
+        <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-ink-900 text-cream-50">
+          <Icon className="h-5 w-5" strokeWidth={1.75} aria-hidden />
+        </span>
+        <span className="font-display text-sm tracking-[0.14em] text-ink-400">
+          {n}
+        </span>
+      </div>
+      <h3 className="mt-4 font-display text-xl font-medium text-ink-900">
         {title}
       </h3>
       <p className="mt-2 text-[15px] leading-relaxed text-ink-600">{body}</p>
@@ -321,10 +355,21 @@ function Step({ n, title, body }: { n: string; title: string; body: string }) {
   );
 }
 
-function Feature({ title, body }: { title: string; body: string }) {
+function Feature({
+  title,
+  body,
+  Icon,
+}: {
+  title: string;
+  body: string;
+  Icon: LucideIcon;
+}) {
   return (
-    <div className="rounded-2xl border border-ink-100 bg-cream-50 p-5">
-      <h3 className="font-display text-[17px] font-medium text-ink-900">
+    <div className="group h-full rounded-2xl border border-ink-100 bg-cream-50 p-5 transition duration-200 hover:-translate-y-0.5 hover:border-ink-200 hover:shadow-card">
+      <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-accent-soft text-accent-dark transition group-hover:bg-accent group-hover:text-cream-50">
+        <Icon className="h-5 w-5" strokeWidth={1.75} aria-hidden />
+      </span>
+      <h3 className="mt-4 font-display text-[17px] font-medium text-ink-900">
         {title}
       </h3>
       <p className="mt-2 text-[14.5px] leading-relaxed text-ink-600">{body}</p>
