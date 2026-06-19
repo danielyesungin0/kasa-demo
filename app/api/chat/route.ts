@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { isSameOrigin } from "@/lib/api/origin-check";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { resolveStylist } from "@/lib/stylists/resolve";
+import { logConsultation, shouldLogConsultation } from "@/lib/consultation-log";
 import { SERVICES, STYLIST } from "@/lib/mock-data";
 import type { Service } from "@/lib/types";
 import { callAI, type AIResponse } from "@/lib/ai/provider";
@@ -380,6 +381,28 @@ export async function POST(request: NextRequest) {
 
     setDedupedResponse(cacheKey, responseBody);
     if (debug) console.log("[chat] ai success", { intent: finalIntent, ids: mergedIds, ms: Date.now() - startedAt });
+
+    // Phase 2 instrumentation: log question-shaped turns so the validation
+    // period produces learning (frequency, struggle, escalation opportunities).
+    // Fire-and-forget, flag-gated, no PII — never affects the response.
+    if (
+      shouldLogConsultation({
+        intent: responseBody.intent,
+        needsHandoff: responseBody.needsHumanHandoff,
+      })
+    ) {
+      logConsultation({
+        stylistId: resolvedStylist?.id ?? null,
+        question: message,
+        answer: responseBody.reply,
+        intent: responseBody.intent,
+        questionType: responseBody.questionType,
+        confidence: responseBody.confidence,
+        needsHandoff: responseBody.needsHumanHandoff,
+        source: responseBody.source,
+      });
+    }
+
     return NextResponse.json(responseBody);
   }
 
