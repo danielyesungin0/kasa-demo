@@ -216,6 +216,10 @@ export type AssistantContext = {
   additionalServices: Service[];
   // Conversation memory
   lastRecommendedService: Service | null;
+  // The set of services last shown as a chooser/options list (e.g. the perm
+  // subset, the treatment cards). Lets a follow-up question ("what's the
+  // difference?") be grounded in EXACTLY what's on screen, not the whole menu.
+  lastShownServices: Service[];
   lastShownSlots: TimeSlot[];
   lastAnchorDateKey: string | null;
   lastIntentTags: IntentTag[];
@@ -276,6 +280,7 @@ export const EMPTY_CONTEXT: AssistantContext = {
   bookingNotes: "",
   additionalServices: [],
   lastRecommendedService: null,
+  lastShownServices: [],
   lastShownSlots: [],
   lastAnchorDateKey: null,
   lastIntentTags: [],

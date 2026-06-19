@@ -104,6 +104,38 @@ export function permsForGoal(goal: PermGoal, catalog: Service[]): Service[] {
   }
 }
 
+/**
+ * Match a user message to a SPECIFIC service by name, when the parser only
+ * tagged the category. Handles "head spa", "ill do a head spa", "the keratin
+ * one", "milbon". Returns the single matched service, or null if zero / >1
+ * match (ambiguous → let the chooser handle it).
+ *
+ * `candidates` should be the relevant set — ideally what's currently on screen
+ * (context.lastShownServices) or the category's services.
+ */
+export function matchServiceByName(
+  message: string,
+  candidates: Service[]
+): Service | null {
+  const text = message.toLowerCase();
+  const hits = candidates.filter((s) => {
+    const name = s.name.toLowerCase();
+    // Distinctive words from the service name (drop generic filler).
+    const words = name
+      .replace(/[()/+]/g, " ")
+      .split(/\s+/)
+      .filter(
+        (w) =>
+          w.length >= 3 &&
+          !["the", "and", "perm", "cut", "hair", "treatment", "color", "colour", "scalp"].includes(w)
+      );
+    // Match if any distinctive word appears in the message (e.g. "spa",
+    // "milbon", "keratin", "digital", "straightening", "bang").
+    return words.some((w) => text.includes(w));
+  });
+  return hits.length === 1 ? hits[0] : null;
+}
+
 /** Bookable (non-hidden) services in a category, popular first. */
 export function bookableInCategory(
   category: ServiceCategory,

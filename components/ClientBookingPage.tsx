@@ -59,6 +59,7 @@ import {
   bookableInCategory,
   permsForGoal,
   PERM_GOAL_OPTIONS,
+  matchServiceByName,
   type PermGoal,
 } from "@/lib/ai/category-browse";
 import { normalizeTimePreferenceLocale } from "@/lib/ai/locale-normalize";
@@ -1436,11 +1437,19 @@ export function ClientBookingPage({
     // interceptor (clarification re-ask, booking, etc.) can swallow a question.
     // It only fires for genuinely question-shaped messages, not commitments.
     if (looksLikeConsultationQuestion(trimmed)) {
-      // If we're mid-clarification, inline the pending question so "the two" /
-      // "short and medium" is grounded in the actual choice being offered.
-      const enriched = context.pendingClarification
-        ? `${trimmed}\n(They're choosing between options for: "${context.pendingClarification.question}". Answer that specific comparison using the services list.)`
-        : trimmed;
+      // Ground the question in what's actually on screen. If we just showed a
+      // SUBSET of services (e.g. the 2 combo perms), a follow-up "what's the
+      // difference?" means THOSE — not the whole menu. Inline them so the model
+      // compares the right things ("be smart about context").
+      let enriched = trimmed;
+      if (context.lastShownServices.length > 0) {
+        const names = context.lastShownServices.map((s) => s.name).join(", ");
+        enriched = `${trimmed}\n(They're asking specifically about these options currently on screen: ${names}. Compare ONLY these — do not list other services.)`;
+      } else if (context.pendingClarification) {
+        // Mid-clarification: inline the pending question so "the two" / "short
+        // and medium" is grounded in the actual choice being offered.
+        enriched = `${trimmed}\n(They're choosing between options for: "${context.pendingClarification.question}". Answer that specific comparison using the services list.)`;
+      }
       const ai = await fetchChatResponse(enriched);
       if (ai && ai.reply) {
         renderChatResponse(ai, trimmed);
@@ -2070,6 +2079,38 @@ export function ClientBookingPage({
     intent: Extract<Intent, { kind: "book" | "switch_service" }>,
     clarificationKey?: string
   ) {
+    // ── NAMED A SPECIFIC SERVICE — pick it, don't re-show the chooser ────────
+    // The parser often tags only the CATEGORY (e.g. "ill do a head spa" →
+    // Treatment) without resolving the specific SKU. If the message names one
+    // of the services we just showed (or one in the category), select it and
+    // go straight to booking — "be smart about context".
+    if (!clarificationKey && !intent.comboServiceId) {
+      const pool =
+        context.lastShownServices.length > 0
+          ? context.lastShownServices
+          : intent.tags.length === 1
+            ? SERVICES.filter((s) => s.category === intent.tags[0] && s.status !== "hidden")
+            : [];
+      const named = pool.length > 0 ? matchServiceByName(intent.rawText, pool) : null;
+      if (named) {
+        patchContext({ lastRecommendedService: named, lastShownServices: [] });
+        pushTurn({
+          kind: "recommendation",
+          id: `t-rec-${Date.now()}`,
+          rec: {
+            primary: named,
+            additionalServices: [],
+            alternates: [],
+            honestNote: null,
+            reason: "",
+            unresolvedAdditionalCategory: null,
+          },
+          ackText: "",
+        });
+        return;
+      }
+    }
+
     // ── BARE CATEGORY BROWSE — don't assume a single service ────────────────
     // When the user names just a CATEGORY with no specifying detail ("perm",
     // "treatment", "color", "haircut"), show the category's services as cards
@@ -2093,6 +2134,9 @@ export function ClientBookingPage({
         });
         return;
       }
+      // Remember what's on screen so a follow-up "what's the difference?" is
+      // grounded in EXACTLY these options, not the whole menu.
+      patchContext({ lastShownServices: browseChooser.services });
       pushTurns(
         {
           kind: "bot-text",
@@ -3316,7 +3360,9 @@ export function ClientBookingPage({
         });
         return;
       }
-      // Multiple → show just those as cards.
+      // Multiple → show just those as cards. Remember them so a follow-up
+      // "what's the difference?" compares EXACTLY these (not all 6 perms).
+      patchContext({ lastShownServices: matches });
       pushTurns(
         {
           kind: "bot-text",
@@ -5999,6 +6045,7 @@ function InlineRecommendationCard({
               additionalServices: additional,
               bookingNotes: "",
               lastRecommendedService: null,
+              lastShownServices: [],
               lastShownSlots: [],
               lastAnchorDateKey: null,
               lastIntentTags: [],
@@ -8264,6 +8311,7 @@ function RecommendationBubble({
     additionalServices: rec.additionalServices,
     bookingNotes: "",
     lastRecommendedService: null,
+    lastShownServices: [],
     lastShownSlots: [],
     lastAnchorDateKey: null,
     lastIntentTags: [],
@@ -8761,6 +8809,7 @@ function DetailsStage({
     additionalServices,
     bookingNotes: notes,
     lastRecommendedService: null,
+    lastShownServices: [],
     lastShownSlots: [],
     lastAnchorDateKey: null,
     lastIntentTags: [],
@@ -8947,6 +8996,7 @@ function ReviewStage({
     additionalServices,
     bookingNotes: clientInfo.notes,
     lastRecommendedService: null,
+    lastShownServices: [],
     lastShownSlots: [],
     lastAnchorDateKey: null,
     lastIntentTags: [],
@@ -9293,6 +9343,7 @@ function ConfirmedStage({
     additionalServices,
     bookingNotes: "",
     lastRecommendedService: null,
+    lastShownServices: [],
     lastShownSlots: [],
     lastAnchorDateKey: null,
     lastIntentTags: [],

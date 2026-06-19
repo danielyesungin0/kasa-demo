@@ -4,6 +4,7 @@ import {
   detectBareCategory,
   bookableInCategory,
   permsForGoal,
+  matchServiceByName,
 } from "@/lib/ai/category-browse";
 import type { Service } from "@/lib/types";
 
@@ -139,6 +140,39 @@ describe("permsForGoal — goal narrows the 6 perms client-friendly", () => {
       for (const s of permsForGoal(g, CATALOG)) reached.add(s.id);
     }
     expect([...reached].sort()).toEqual([...all].sort());
+  });
+});
+
+describe("matchServiceByName — pick a named service from the shown set", () => {
+  const treatments = [
+    svc({ id: "t-headspa", name: "Head Spa (Scalp Treatment)", category: "Treatment" }),
+    svc({ id: "t-milbon", name: "Milbon Treatment", category: "Treatment" }),
+    svc({ id: "t-keratin", name: "Keratin Treatment", category: "Treatment" }),
+  ];
+  it("'ill do a head spa' → Head Spa", () => {
+    expect(matchServiceByName("ill do a head spa", treatments)?.id).toBe("t-headspa");
+  });
+  it("'the milbon one' → Milbon", () => {
+    expect(matchServiceByName("the milbon one", treatments)?.id).toBe("t-milbon");
+  });
+  it("'do the keratin' → Keratin", () => {
+    expect(matchServiceByName("do the keratin", treatments)?.id).toBe("t-keratin");
+  });
+  it("'head spa' (exact) → Head Spa", () => {
+    expect(matchServiceByName("head spa", treatments)?.id).toBe("t-headspa");
+  });
+  it("ambiguous 'treatment' → null (let chooser handle)", () => {
+    expect(matchServiceByName("a treatment", treatments)).toBeNull();
+  });
+  it("no match → null", () => {
+    expect(matchServiceByName("a perm", treatments)).toBeNull();
+  });
+  it("perm subset: 'the digital one' → Women's Digital", () => {
+    const perms = [
+      svc({ id: "p-reg", name: "Women's Regular Perm", category: "Perm" }),
+      svc({ id: "p-dig", name: "Women's Digital Perm", category: "Perm" }),
+    ];
+    expect(matchServiceByName("the digital one", perms)?.id).toBe("p-dig");
   });
 });
 
