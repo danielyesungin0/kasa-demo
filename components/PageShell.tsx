@@ -33,12 +33,24 @@ export function PageShell({
               Kasa<span className="text-accent">.</span>
             </Link>
             {variant === "marketing" && (
-              <nav className="flex items-center gap-2">
+              <nav className="flex items-center gap-4">
+                <a
+                  href="#pricing"
+                  className="hidden text-sm font-medium text-ink-600 transition hover:text-ink-900 sm:inline"
+                >
+                  Pricing
+                </a>
+                <a
+                  href="#faq"
+                  className="hidden text-sm font-medium text-ink-600 transition hover:text-ink-900 sm:inline"
+                >
+                  FAQ
+                </a>
                 <Link
                   href="/setup"
                   className="rounded-full bg-ink-900 px-4 py-2.5 text-sm font-medium text-cream-50 transition hover:bg-ink-800 active:scale-[0.97]"
                 >
-                  Set up
+                  Get started
                 </Link>
               </nav>
             )}
