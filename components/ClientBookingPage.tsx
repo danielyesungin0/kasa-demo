@@ -1461,6 +1461,29 @@ export function ClientBookingPage({
       // AI unavailable → fall through to normal routing rather than dead-end.
     }
 
+    // ── ACCEPT THE RECOMMENDATION — "yes" / "book it" commits it ────────────
+    // A recommendation is on screen (Book this / Show other options) and the
+    // user typed a bare confirmation. That means "book THAT one" — accept it and
+    // go to time selection, exactly like tapping Book this. Without this, "yes"
+    // is low-signal and gets misrouted (e.g. re-triggering the perm chooser).
+    // Guarded so it only fires when there's something to accept and we're NOT
+    // mid-clarification (a "yes" to a clarify question means something else).
+    const isBareAffirmation =
+      /^(yes|yeah|yep|yup|ya|sure|ok|okay|k|book it|book this|do it|let'?s do it|sounds good|that works|perfect|great|please)\.?!?$/i.test(
+        trimmed
+      );
+    if (
+      isBareAffirmation &&
+      context.lastRecommendedService !== null &&
+      context.selectedService === null &&
+      context.selectedSlot === null &&
+      context.pendingClarification === null &&
+      context.lastShownSlots.length === 0
+    ) {
+      acceptRecommendationFromText();
+      return;
+    }
+
     // Pending-clarification re-ask: a typed answer to a pending clarification
     // should go through the deterministic path, even if it's low-signal.
     const isLowSignal =
@@ -4027,6 +4050,25 @@ export function ClientBookingPage({
       // Defer one tick so the AssistantBlock / MobileChatShell is mounted and
       // its turn handlers are ready to receive the message.
       setTimeout(() => handleTextSubmit(prefilledMessage), 0);
+    }
+  }
+
+  // A typed confirmation ("yes" / "book it") accepts the recommendation that's
+  // on screen — same outcome as tapping "Book this". Routes through
+  // handleBookThis so the time-memory (context.lastIntentTimeHints) and slot
+  // rendering stay identical to the button path. If we can't find the rec turn
+  // (shouldn't happen given the caller's guard), fall back to time stage.
+  function acceptRecommendationFromText() {
+    // The user's "yes" is already echoed by handleTextSubmit, and handleBookThis
+    // pushes a "Book {service}" confirmation — so don't add another user bubble.
+    const recTurn = [...turns].reverse().find((t) => t.kind === "recommendation");
+    if (recTurn) {
+      handleBookThis(recTurn.id);
+      return;
+    }
+    if (context.lastRecommendedService) {
+      patchContext({ selectedService: context.lastRecommendedService });
+      setStage("time");
     }
   }
 
