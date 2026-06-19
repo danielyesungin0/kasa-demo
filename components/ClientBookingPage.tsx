@@ -1389,6 +1389,22 @@ export function ClientBookingPage({
       patchContext({ lastIntentTimeHints: detIntent.timeHints });
     }
 
+    // SEE-ALL → open the full schedule directly. A typed "see all openings /
+    // all the available times / show me everything" mid-booking should open the
+    // full-screen day picker (same as the "See all openings" chip), NOT another
+    // in-thread recommendation. Routing it here also avoids re-applying a prior
+    // exact-hour constraint (which made "see all" show "3 PM isn't open…").
+    const wantsSeeAll =
+      (context.selectedService !== null || context.lastRecommendedService !== null) &&
+      (/\ball\b[\s\w]*\b(times?|openings?|slots?|availability|appointments?)\b/i.test(trimmed) ||
+        /\b(see|show|view)\b[\s\w]*\beverything\b/i.test(trimmed) ||
+        /\bfull\s+availability\b/i.test(trimmed) ||
+        /\beverything\s+(available|open)\b/i.test(trimmed));
+    if (wantsSeeAll) {
+      setStage("time");
+      return;
+    }
+
     // Hard deterministic actions — bypass AI entirely.
     const isHardAction =
       detIntent.kind === "select_slot" ||
@@ -7374,8 +7390,10 @@ function TurnRow({
         { key: "this-week", label: "This week" },
         { key: "next-week", label: "Next week" },
         { key: "week-after", label: "Week after" },
+        // "See all openings" opens the full day-picker. "Pick a date" was
+        // removed — it duplicated that and confused users (it wasn't clear what
+        // it did); the full schedule already lets you choose any day.
         { key: "see-all", label: "See all openings" },
-        { key: "pick-date", label: "Pick a date" },
       ] as const
     ).filter((c) => availability[c.key]);
 
@@ -7541,11 +7559,7 @@ function TurnRow({
                   <NavChip
                     key={c.key}
                     label={c.label}
-                    variant={
-                      c.key === "pick-date" || c.key === "see-all"
-                        ? "ghost"
-                        : "default"
-                    }
+                    variant={c.key === "see-all" ? "ghost" : "default"}
                     onClick={() =>
                       onNavChip(
                         c.key,
