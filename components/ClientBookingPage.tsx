@@ -3820,56 +3820,14 @@ export function ClientBookingPage({
   function handleCategoryShortcut(
     category: "Haircut" | "Color" | "Perm" | "Treatment"
   ) {
-    // Prefer a popularRank-ranked service in this category. If none exists
-    // (e.g. Perm category has online services but no rank set yet), fall
-    // back to the first online service so the chip still produces a card.
-    //
-    // CRITICAL: when the user taps a category chip ("Perm"), they're asking
-    // for that ONE category — not a bundled combo. Exclude SKUs that bundle
-    // a different category (e.g. svc-mens-perm-cut bundles a Haircut into
-    // a Perm SKU). Otherwise tapping "Perm" books a haircut they didn't ask
-    // for. The check covers both the popularRank path and the fallback.
-    const COMBO_SKUS_BUNDLING_OTHER_CATEGORY = new Set<string>([
-      "svc-mens-perm-cut",
-      "svc-cut-down-perm",
-    ]);
-    const ranked = SERVICES
-      .filter(
-        (s): s is Service & { popularRank: number } =>
-          s.category === category &&
-          s.status === "online" &&
-          !COMBO_SKUS_BUNDLING_OTHER_CATEGORY.has(s.id) &&
-          typeof (s as Service & { popularRank?: number }).popularRank === "number"
-      )
-      .sort((a, b) => a.popularRank - b.popularRank)[0];
-    const fallback = SERVICES.find(
-      (s) =>
-        s.category === category &&
-        s.status === "online" &&
-        !COMBO_SKUS_BUNDLING_OTHER_CATEGORY.has(s.id)
-    );
-    const top = ranked ?? fallback;
-
-    // Defensive: no online service in this category at all (shouldn't happen
-    // since the chip wouldn't have rendered without one).
-    if (!top) {
-      openAssistant(category.toLowerCase());
-      return;
-    }
-
-    const isRanked = !!ranked;
-    const rec: Recommendation = {
-      primary: top,
-      additionalServices: [],
-      alternates: [],
-      honestNote: null,
-      reason: isRanked
-        ? `${top.name} is the most-booked ${category.toLowerCase()} option.`
-        : `${top.name} is a popular ${category.toLowerCase()} service.`,
-      unresolvedAdditionalCategory: null,
-    };
-    setEntryRecommendation({ userText: category, rec });
+    // STAY IN THE CHAT. Tapping a category chip is the start of a question,
+    // not a booking — so open the conversation with that category (e.g.
+    // "perm") and let the assistant answer / enumerate the options inline,
+    // instead of taking over the screen with a single pre-picked service.
+    // The only way out of the chat is an explicit SERVICE tap in the booking
+    // view (handleServicePick), never a category.
     track("assistant_opened", { source: "category-chip", category });
+    openAssistant(category.toLowerCase());
   }
 
   /**
@@ -3927,28 +3885,13 @@ export function ClientBookingPage({
       return;
     }
 
+    // STAY IN THE CHAT. A typed message on the entry screen always opens the
+    // conversation — we never take over the screen with a full-page
+    // recommendation card that pre-picks a service. The chat is the product:
+    // it answers questions and, when appropriate, renders an INLINE
+    // recommendation turn inside the conversation. The only way out of the
+    // chat is the user explicitly tapping a service in the main booking view.
     track("assistant_opened", { source: "intent-input" });
-    try {
-      const intent = parseClientMessage(trimmed, EMPTY_CONTEXT);
-      if (intent.kind === "book") {
-        const hasSignal =
-          intent.comboServiceId !== null || intent.tags.length > 0;
-        const clar = getClarifyingQuestion(intent, EMPTY_CONTEXT);
-        if (hasSignal && !clar) {
-          const rec = getRecommendedServices(intent);
-          if (rec.primary && !rec.unresolvedAdditionalCategory) {
-            // Render the recommendation card inline. Stay on entry.
-            setEntryRecommendation({ userText: trimmed, rec });
-            return;
-          }
-        }
-      }
-    } catch {
-      // Parser threw — fall through to chat, which is the existing
-      // catch-all path and handles its own errors.
-    }
-    // Anything else — drop into the chat with the prefilled message and let
-    // the existing turn flow handle it.
     openAssistant(trimmed);
   }
 
