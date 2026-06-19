@@ -126,6 +126,10 @@ type AssistantTurn =
       // Label for the expand action, e.g. "See all Tuesday times". Null → no
       // expansion offered (recommended IS everything).
       seeAllLabel?: string | null;
+      // Specific-time mode (user pinned an exact hour): "hit" = that time is
+      // open (intro is a yes + the one slot); "near" = not open, recommended are
+      // the closest. null = normal range recommendation.
+      exactStatus?: "hit" | "near" | null;
     }
   | { kind: "consult-cta"; id: string; reason?: string }
   | { kind: "custom-cta"; id: string }
@@ -754,6 +758,7 @@ export function ClientBookingPage({
       intro: reco.intro,
       recommended: reco.recommended,
       seeAllLabel: reco.seeAllLabel,
+      exactStatus: reco.exactStatus ?? null,
     });
     patchContext({
       lastShownSlots: slots,
@@ -4568,6 +4573,19 @@ function aiTimePrefToHints(
     if (short) hints.days = [short];
   }
 
+  // EXACT-HOUR recovery. The AI's timePreference has no hour field (only
+  // partOfDay), so "tomorrow at 5" arrives as partOfDay only — the specific
+  // time is lost. Recover it from `raw` using the deterministic extractor
+  // (which correctly reads "at 5" → 17:00). This is what lets the chat answer
+  // a specific-time request ("is 5pm open?") instead of a vague afternoon list.
+  if (tp.raw) {
+    const rawHints = extractTimeHints(tp.raw);
+    if (rawHints.hour24 !== null) {
+      hints.hour24 = rawHints.hour24;
+      hints.timeFlexibility = rawHints.timeFlexibility;
+    }
+  }
+
   switch (tp.type) {
     case "next_week":
       hints.weekShift = 1;
@@ -4810,11 +4828,23 @@ function formatHour(hour24: number): string {
  */
 const MAX_RECOMMENDED = 6;
 
+type RecoResult = {
+  intro: string | null;
+  recommended: TimeSlot[];
+  seeAllLabel: string | null;
+  // Specific-time mode: set when the user pinned an exact hour ("tomorrow at
+  // 5"). Drives a yes/no-style answer instead of a range grid.
+  //   exactStatus "hit"  → that exact time is open (offer to book it).
+  //   exactStatus "near" → not open; `recommended` are the closest times.
+  exactStatus?: "hit" | "near";
+  exactSlot?: TimeSlot | null; // the matched slot when status is "hit"
+};
+
 function buildRecommendation(
   allSlots: TimeSlot[],
   hints: TimeHints,
   serviceName: string
-): { intro: string | null; recommended: TimeSlot[]; seeAllLabel: string | null } {
+): RecoResult {
   if (allSlots.length === 0) {
     return { intro: null, recommended: [], seeAllLabel: null };
   }
@@ -4825,6 +4855,44 @@ function buildRecommendation(
   const ranked = rankTimeSlots(allSlots, hints);
   const anchorKey = ranked[0]?.dateKey ?? allSlots[0].dateKey;
   const anchorSlots = ranked.filter((s) => s.dateKey === anchorKey);
+
+  // ── SPECIFIC-TIME branch ────────────────────────────────────────────────
+  // The user pinned an exact hour ("tomorrow at 5"). Answer the yes/no question
+  // directly rather than dumping a range. Look on the anchor day for that hour.
+  if (hints.hour24 !== null && hints.timeFlexibility === "exact") {
+    const asked = hints.hour24;
+    const dayName = anchorSlots[0]?.dayLabel
+      ? DAY_FULL_FROM_SHORT[anchorSlots[0].dayLabel] ?? anchorSlots[0].dayLabel
+      : null;
+    const askedLabel = formatHour(asked).toUpperCase().replace("PM", " PM").replace("AM", " AM");
+    // Exact hit (within 15 min)?
+    const exact = anchorSlots.find((s) => Math.abs(s.hour24 - asked) <= 0.25);
+    if (exact) {
+      return {
+        intro: `Yes — ${exact.timeLabel}${dayName ? ` ${dayName}` : ""} is open 💛 Want me to grab it?`,
+        recommended: [exact],
+        seeAllLabel: anchorSlots.length > 1 ? `See all ${dayName ?? "that day's"} times` : null,
+        exactStatus: "hit",
+        exactSlot: exact,
+      };
+    }
+    // No exact hit — offer the closest times on the anchor day.
+    const closest = [...anchorSlots]
+      .sort((a, b) => Math.abs(a.hour24 - asked) - Math.abs(b.hour24 - asked))
+      .slice(0, Math.min(4, anchorSlots.length))
+      .sort((a, b) => a.hour24 - b.hour24);
+    if (closest.length > 0) {
+      return {
+        intro: `${askedLabel}${dayName ? ` ${dayName}` : ""} isn't open, but I've got these close by 💛`,
+        recommended: closest,
+        seeAllLabel: anchorSlots.length > closest.length ? `See all ${dayName ?? "that day's"} times` : null,
+        exactStatus: "near",
+        exactSlot: null,
+      };
+    }
+    // Anchor day has nothing at all → fall through to the range logic below
+    // (which will surface the nearest open day).
+  }
 
   // "Closest then spread" within the anchor day:
   //   - lead with the slots nearest the requested hour/period (already ordered
