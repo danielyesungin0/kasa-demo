@@ -226,6 +226,8 @@ export async function POST(request: NextRequest) {
               s.behavior === "consultation"
                 ? ("consultation" as const)
                 : ("online" as const),
+            // Provider-written blurb — grounds consultation/comparison answers.
+            description: s.chat_description,
           }))
       : SERVICES.map((s) => ({
           id: s.id,

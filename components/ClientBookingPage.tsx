@@ -1591,9 +1591,22 @@ export function ClientBookingPage({
         }
       }
 
+      // ANSWER-FIRST GUARD (deterministic safety net): if the message is
+      // clearly a QUESTION ("what's the difference", "which should I", "can you
+      // do…", "would you recommend", "how long does X last"), never let it
+      // collapse into a booking — even if the free model misclassified it as
+      // `booking`. We render the AI's answer (reply) instead. This makes the
+      // answer-first behavior robust to model mislabeling: we fail toward
+      // ANSWERING, never toward bulldozing into book.
+      const effectiveIntent =
+        looksLikeConsultationQuestion(trimmed) &&
+        (aiResponse.intent === "booking" || aiResponse.intent === "service_guidance")
+          ? "consultation"
+          : aiResponse.intent;
+
       const converted = aiEnvelopeToIntent(
         {
-          intent: aiResponse.intent,
+          intent: effectiveIntent,
           recommendedServiceIds: aiResponse.recommendedServiceIds,
           timePreference: aiResponse.timePreference ?? null,
           peopleCount: aiResponse.peopleCount ?? 1,
@@ -4465,6 +4478,42 @@ function hintsHaveSignal(h: TimeHints): boolean {
  *     (the other person), NOT multi-person (FALSE). We must not over-fire
  *     on a single third-party booking.
  */
+/**
+ * Is this message clearly a CONSULTATION QUESTION (advice / comparison / "can
+ * you do…") rather than a booking commitment? Used as a deterministic safety
+ * net so a free-model misclassification can never bulldoze a real question into
+ * the booking flow. We deliberately fail toward "answer" — so the bar for
+ * matching is question-shaped phrasing, and we EXCLUDE clear commit phrasing.
+ */
+function looksLikeConsultationQuestion(text: string): boolean {
+  const t = ` ${text.toLowerCase().trim()} `;
+
+  // Clear commitment phrasing → NOT a consultation (let booking proceed).
+  // "book me", "i want a/the", "let's do", "schedule", "i'd like to book".
+  if (/\b(book|schedule|reserve)\s+(me|a|an|my|the|it)\b/.test(t)) return false;
+  if (/\b(let'?s\s+do|i'?ll\s+(take|do|book|go\s+with))\b/.test(t)) return false;
+
+  // Comparison / difference questions.
+  if (/\b(difference|differ|compare|versus)\b/.test(t)) return true;
+  if (/\bvs\.?\b/.test(t)) return true;
+
+  // "which should I…", "what would you recommend", "what should I get/book".
+  if (/\bwhich\s+(one|service|cut|should|do\s+you)\b/.test(t)) return true;
+  if (/\b(recommend|suggest|advice|advise)\b/.test(t)) return true;
+  if (/\bwhat\s+(should|would|do\s+you\s+think)\b/.test(t)) return true;
+
+  // Feasibility / suitability → "can you do…", "could you do…", "is it possible",
+  // "will this work", "would this suit". These often warrant a defer-to-Shen.
+  if (/\b(can|could)\s+(you|shen|she)\s+(do|achieve|match|pull\s+off)\b/.test(t)) return true;
+  if (/\b(will|would|does)\s+(this|that|it)\s+(work|suit|look|hold|last)\b/.test(t)) return true;
+  if (/\bis\s+(it|this|that)\s+possible\b/.test(t)) return true;
+
+  // Duration/longevity as a phrased question ("how long will this last").
+  if (/\bhow\s+long\s+(will|does|do)\b.*\b(last|take|hold)\b/.test(t)) return true;
+
+  return false;
+}
+
 function detectMultiPerson(text: string): boolean {
   const t = ` ${text.toLowerCase()} `;
 
@@ -4833,6 +4882,7 @@ type AIEnvelopeForConversion = {
   intent:
     | "faq"
     | "service_guidance"
+    | "consultation"
     | "booking"
     | "handoff"
     | "unsupported"
@@ -4878,6 +4928,16 @@ function aiEnvelopeToIntent(
         asks: [env.questionType],
       };
     }
+    return null;
+  }
+
+  // CONSULTATION — an advice/comparison question ("what's the difference",
+  // "which should I get", "can you do this style"). The AI already wrote the
+  // ANSWER in env.reply; return null so the caller RENDERS that answer instead
+  // of collapsing it into a booking action. This is the core "answer first,
+  // book second" fix — the prior behavior discarded the answer and jumped to
+  // time-selection, which read as ignoring the question (a trust break).
+  if (env.intent === "consultation") {
     return null;
   }
 

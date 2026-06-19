@@ -21,6 +21,9 @@ import { recordAIRequest, recordAIOutcome } from "@/lib/ai/metrics";
 export type AIIntent =
   | "faq"
   | "service_guidance"
+  | "consultation" // open-ended advice ("what's the difference", "which should
+  // I get", "would you recommend", "will this work for me"). ANSWER first; the
+  // chat never auto-books a consultation — it offers booking after.
   | "booking"
   | "handoff"
   | "unsupported"
@@ -131,6 +134,9 @@ export type AIRequestContext = {
     priceLabel: string;
     durationLabel: string;
     status: "online" | "consultation" | "hidden";
+    // Optional provider-written description — used to ground consultation /
+    // comparison answers in real detail instead of guessing.
+    description?: string | null;
   }>;
   /** Up to ~10 most recent turns, oldest first. Plain user/bot strings only. */
   conversation: Array<{ role: "user" | "assistant"; content: string }>;
@@ -488,10 +494,11 @@ function parseStructured(raw: string, opts: AIRequestOptions): AIResponse | null
   const intent: AIIntent =
     intentRaw === "faq" ||
     intentRaw === "service_guidance" ||
+    intentRaw === "consultation" ||
     intentRaw === "booking" ||
     intentRaw === "handoff" ||
     intentRaw === "unsupported"
-      ? intentRaw
+      ? (intentRaw as AIIntent)
       : "unknown";
 
   const reply = typeof obj.reply === "string" ? obj.reply.trim() : "";
@@ -619,7 +626,7 @@ function buildSystemPrompt(ctx: AIRequestContext): string {
     .filter((s) => s.status !== "hidden")
     .map(
       (s) =>
-        `  - id: ${s.id} | name: ${s.name} | category: ${s.category} | price: ${s.priceLabel} | duration: ${s.durationLabel}${s.status === "consultation" ? " | consultation-only" : ""}`
+        `  - id: ${s.id} | name: ${s.name} | category: ${s.category} | price: ${s.priceLabel} | duration: ${s.durationLabel}${s.status === "consultation" ? " | consultation-only" : ""}${s.description ? ` | about: ${s.description}` : ""}`
     )
     .join("\n");
 
@@ -658,7 +665,7 @@ You MUST respond with valid JSON only, matching this exact schema:
 
 {
   "reply": "string — short, warm reply shown to the client",
-  "intent": "faq" | "service_guidance" | "booking" | "handoff" | "unsupported" | "unknown",
+  "intent": "faq" | "service_guidance" | "consultation" | "booking" | "handoff" | "unsupported" | "unknown",
   "recommendedServiceIds": ["service id from the list above, max 3"],
   "serviceQuery": "string or null — the service phrase the user used (for handoff context)",
   "multiServiceRequest": boolean,
@@ -679,11 +686,18 @@ You MUST respond with valid JSON only, matching this exact schema:
 
 Intent guide:
 - "faq": simple factual answer (location, hours, price/duration of ONE specific named service). Set questionType.
-- "service_guidance": user is shopping for a service, OR asks about a category/broad term ("do you offer treatment?", "what colors do you do?", "any perms?"). Recommend / enumerate from the list.
-- "booking": user wants to book something specific — pick the matching service id(s).
-- "handoff": multi-person, "for me and my mom", custom requests, scheduling within another appointment, multiple unrelated questions, anything that needs ${stylist} personally.
+- "service_guidance": user is shopping/browsing — asks about a category or broad term ("do you offer treatment?", "what colors do you do?", "any perms?"). Enumerate from the list.
+- "consultation": user asks an ADVICE or COMPARISON question — "what's the difference between X and Y", "which should I get", "what would you recommend", "how long will this last", "will this work for my hair", "can you do <style>". ANSWER the question helpfully in your reply. Do NOT treat it as a booking.
+- "booking": user clearly wants to COMMIT to a specific service ("book me a haircut", "I want a short cut Tuesday at 2"). Pick the matching service id(s).
+- "handoff": multi-person, custom requests, scheduling within another appointment, anything that needs ${stylist} personally.
 - "unsupported": user asked for a service ${stylist} doesn't offer.
 - "unknown": you can't tell what they want yet — ask one clarifying question.
+
+ANSWER-FIRST (most important behavior): when the client asks a QUESTION (consultation, comparison, "which", "what's the difference", "how long", "can you do…"), ANSWER IT FULLY AND SPECIFICALLY FIRST using the services list above — THEN, in the same reply, offer to book ("…want me to find you a time? 💛"). NEVER skip the answer to jump straight to booking. A client who asks a question and gets pushed to book instead feels ignored. Booking is the SECOND half of the reply, never the whole reply.
+
+GROUNDING COMPARISONS: when comparing services ("what's the difference between X and Y"), use the price, duration, and the "about:" detail from the services list. State the concrete differences you can see (length/duration/price/what each is for). If a service has no "about:" detail and you genuinely don't know a specific, say so honestly and offer ${stylist}'s help ("…${stylist} can walk you through exactly which suits you 💛") rather than inventing details.
+
+HONEST UNCERTAINTY (a trust feature, not a weakness): if you're NOT confident — a specific style's feasibility ("can you do this exact look?"), whether something suits THIS person's hair, or anything not grounded in the facts above — DO NOT guess or over-promise. Defer warmly: "Honestly, I'd want ${stylist} to take a quick look before I say yes 💛 — want me to send her your question?" Set needsHumanHandoff=true with a short handoffSummary. Saying "I'm not sure, let me check with ${stylist}" is ALWAYS better than a confident wrong answer. But don't over-defer: answerable questions (service differences, durations, prices, what's offered) you answer directly — only defer on genuine judgment calls.
 
 CATEGORY / BROAD QUESTIONS — IMPORTANT (do not give a generic yes/no):
 - When a client asks about a CATEGORY or broad term ("do you offer treatment?", "do you do color?", "what kind of perms?", "any haircuts?"), look at the services list above and find EVERY service whose category or name matches.
