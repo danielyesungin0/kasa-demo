@@ -53,6 +53,7 @@ import { cn } from "@/lib/cn";
 import { track } from "@/lib/analytics";
 import { detectUnsupportedService } from "@/lib/unsupported-services";
 import { decideGuidancePresentation } from "@/lib/ai/guidance-presentation";
+import { categoryBrowseOptions } from "@/lib/ai/category-browse";
 import { normalizeTimePreferenceLocale } from "@/lib/ai/locale-normalize";
 
 /* -------------------------------------------------------------------------- */
@@ -1961,6 +1962,40 @@ export function ClientBookingPage({
     return { lengthHint, colorDirection, permStyle };
   }
 
+  /**
+   * If the intent is a BARE single-category browse with no specifying detail
+   * and the category has more than one bookable service, return the services
+   * to show + a digestible question. Otherwise null (fall through to the
+   * normal single-service recommendation). Category-agnostic — works for
+   * perm/treatment/color/haircut alike.
+   */
+  function maybeCategoryBrowseChooser(
+    intent: Extract<Intent, { kind: "book" | "switch_service" }>,
+    hasClarifier: boolean
+  ): { question: string; services: Service[] } | null {
+    const options = categoryBrowseOptions(
+      {
+        tags: intent.tags,
+        comboServiceId: intent.comboServiceId,
+        lengthHint: intent.lengthHint,
+        permStyle: intent.permStyle,
+        colorDirection: intent.colorDirection,
+        hasClarifier,
+      },
+      SERVICES
+    );
+    if (!options) return null;
+
+    const category = options[0].category;
+    const noun = String(category).toLowerCase();
+    const question =
+      category === "Perm"
+        ? `${sName()} offers a few different perms. Here are the options 👇\n\nWant me to walk you through the differences, or do you already know which one you're after?`
+        : `${sName()} offers a few ${noun} options. Here they are 👇\n\nTell me a bit about what you're going for, or tap one to see times. Happy to explain the differences too.`;
+
+    return { question, services: options };
+  }
+
   async function handleBookOrSwitch(
     intent: Extract<Intent, { kind: "book" | "switch_service" }>,
     clarificationKey?: string
@@ -1968,6 +2003,37 @@ export function ClientBookingPage({
     if (intent.kind === "book" && intent.confidence === "low") {
       // Context-aware fallback — never "Hmm, I'm not totally sure"
       handleUnknown({ kind: "unknown", rawText: intent.rawText });
+      return;
+    }
+
+    // ── BARE CATEGORY BROWSE — don't assume a single service ────────────────
+    // When the user names just ONE category with no specifying detail ("perm",
+    // "treatment", "color") and that category has SEVERAL distinct services,
+    // we must NOT silently pre-pick a "closest match". Show them what's in the
+    // category as a tappable list and ask what they're after — they can then
+    // pick one, or ask a follow-up ("what's the difference between those?").
+    // Like every other service, options first, questions encouraged.
+    //
+    // A dedicated clarifying question (e.g. haircut length, color direction)
+    // is a BETTER experience than a raw list, so it wins — the browse-chooser
+    // only fires for categories with no clarifier (perm, treatment).
+    const hasClarifier =
+      !clarificationKey && getClarifyingQuestion(intent, context) !== null;
+    const browseChooser = maybeCategoryBrowseChooser(intent, hasClarifier);
+    if (browseChooser) {
+      pushTurns(
+        {
+          kind: "bot-text",
+          id: `t-cat-q-${Date.now()}`,
+          text: browseChooser.question,
+        },
+        {
+          kind: "alternates",
+          id: `t-cat-opts-${Date.now()}`,
+          services: browseChooser.services,
+          recommendedId: null,
+        }
+      );
       return;
     }
 
