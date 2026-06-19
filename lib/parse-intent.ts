@@ -649,12 +649,32 @@ export function extractTimeHints(text: string): TimeHints {
       const m = parseInt(bare[2], 10);
       if (h <= 23 && m <= 59) hour24 = h + m / 60;
     } else {
-      // Bare hour after a time cue — "at 5", "around 3", "by 11". No am/pm and
-      // no colon, so "5" here is a CLOCK TIME (the day-of-month parser above
-      // deliberately ignores it). Apply a business-hours reading: 1–7 → PM
-      // (afternoon/evening appointments), 8–11 → AM, 12 → noon. This makes
-      // "next Tuesday at 5" mean 5pm, not the 5th.
-      const atHour = text.match(/\b(?:at|around|by|near)\s+(\d{1,2})(?:\s|$|[.,!?])/);
+      // Compact texting shorthand — "130" = 1:30, "1230" = 12:30, "915" = 9:15.
+      // People rarely type "1:30 PM" in chat. A bare 3–4 digit run with a valid
+      // minute tail is a time. Optional am/pm suffix ("130pm") respected.
+      const compact = text.match(/\b(\d{3,4})\s*(am|pm)?\b/i);
+      let compactHandled = false;
+      if (compact) {
+        const digits = compact[1];
+        const mer = compact[2]?.toLowerCase();
+        const mm = parseInt(digits.slice(-2), 10);
+        let hh = parseInt(digits.slice(0, -2), 10);
+        if (mm <= 59 && hh >= 0 && hh <= 23) {
+          if (mer === "pm" && hh !== 12) hh += 12;
+          else if (mer === "am" && hh === 12) hh = 0;
+          else if (!mer && hh >= 1 && hh <= 7 && period !== "morning") hh += 12; // business-hours PM
+          hour24 = hh + mm / 60;
+          compactHandled = true;
+        }
+      }
+
+      // Bare hour after a time cue — "at 5", "around 3", "by 11", "let's do 2",
+      // "do 4". No am/pm and no colon, so "5" here is a CLOCK TIME (the
+      // day-of-month parser above deliberately ignores it). Business-hours
+      // reading: 1–7 → PM, 8–11 → AM, 12 → noon. Makes "next Tuesday at 5" = 5pm.
+      const atHour = !compactHandled
+        ? text.match(/\b(?:at|around|by|near|do|book|take)\s+(\d{1,2})(?:\s|$|[.,!?])/)
+        : null;
       if (atHour) {
         let h = parseInt(atHour[1], 10);
         if (h >= 1 && h <= 11) {

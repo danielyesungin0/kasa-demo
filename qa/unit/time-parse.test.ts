@@ -2,6 +2,18 @@ import { describe, it, expect } from "vitest";
 import { extractTimeHints, rankTimeSlots } from "@/lib/parse-intent";
 import type { TimeSlot } from "@/lib/types";
 
+describe("compact texting time shorthand ('130' = 1:30, not everyone types '1:30 PM')", () => {
+  it("'okay let's do 130' → 1:30 PM", () => expect(extractTimeHints("okay let's do 130").hour24).toBe(13.5));
+  it("'130pm' → 1:30 PM", () => expect(extractTimeHints("130pm").hour24).toBe(13.5));
+  it("'1230' → 12:30 PM", () => expect(extractTimeHints("1230").hour24).toBe(12.5));
+  it("'915' → 9:15 AM", () => expect(extractTimeHints("915").hour24).toBe(9.25));
+  it("'let's do 230' → 2:30 PM", () => expect(extractTimeHints("let's do 230").hour24).toBe(14.5));
+  it("'let's do 2' → 2 PM (bare hour via 'do' cue)", () => expect(extractTimeHints("let's do 2").hour24).toBe(14));
+  it("colon + am/pm still parse", () => expect(extractTimeHints("let's do 1:30pm").hour24).toBe(13.5));
+  it("invalid minute tail ('199') → null", () => expect(extractTimeHints("199").hour24).toBeNull());
+  it("plain service word → no hour", () => expect(extractTimeHints("haircut").hour24).toBeNull());
+});
+
 function slot(dateKey: string, dayLabel: string, hour24: number): TimeSlot {
   const day = Number(dateKey.split("-")[2]);
   const hm = `${String(Math.floor(hour24)).padStart(2, "0")}:00`;
