@@ -127,7 +127,7 @@ export default function HomePage() {
 
       {/* ── How it works ──────────────────────────────────────────────────── */}
       <section id="how" className="mt-28 scroll-mt-24 border-t border-ink-100 pt-16">
-        <Reveal>
+        <Reveal className="text-center">
           <p className="font-display text-sm uppercase tracking-[0.18em] text-accent">
             How it works
           </p>
@@ -165,11 +165,11 @@ export default function HomePage() {
 
       {/* ── What the assistant does ───────────────────────────────────────── */}
       <section className="mt-28 border-t border-ink-100 pt-16">
-        <Reveal>
+        <Reveal className="text-center">
           <p className="font-display text-sm uppercase tracking-[0.18em] text-accent">
             Meet your assistant
           </p>
-          <h2 className="mt-3 max-w-2xl font-display text-3xl font-medium tracking-tight text-ink-900 sm:text-4xl">
+          <h2 className="mx-auto mt-3 max-w-2xl font-display text-3xl font-medium tracking-tight text-ink-900 sm:text-4xl">
             It books like your sharpest front desk — in your voice.
           </h2>
         </Reveal>
@@ -257,7 +257,7 @@ export default function HomePage() {
 
       {/* ── FAQ ───────────────────────────────────────────────────────────── */}
       <section id="faq" className="mt-28 scroll-mt-24 border-t border-ink-100 pt-16">
-        <Reveal>
+        <Reveal className="text-center">
           <p className="font-display text-sm uppercase tracking-[0.18em] text-accent">
             FAQ
           </p>
@@ -265,7 +265,9 @@ export default function HomePage() {
             Questions, answered.
           </h2>
         </Reveal>
-        <Reveal delay={0.05} className="mt-10 max-w-2xl divide-y divide-ink-100 border-t border-ink-100">
+        {/* Header centered; the Q&A block is centered as a column but its text
+            stays left-aligned — questions/answers are unreadable centered. */}
+        <Reveal delay={0.05} className="mx-auto mt-10 max-w-2xl divide-y divide-ink-100 border-t border-ink-100">
           <Faq
             q="Do my clients need to download an app?"
             a="No. They tap your link and chat right in their browser. Nothing to install, no account to create."
