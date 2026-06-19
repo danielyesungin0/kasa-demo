@@ -8229,9 +8229,21 @@ function TimeStage({
               <p className="mb-2 font-display text-xs uppercase tracking-[0.16em] text-ink-500">
                 {day} · {daySlots.length} {daySlots.length === 1 ? "time" : "times"}
               </p>
-              <div className="grid grid-cols-3 gap-2">
+              {/* Time-only chips that reflow by width. The day heading above
+                  owns the date, so cards show ONLY the time — no redundant
+                  eyebrow, no truncation at any screen size. flex-wrap fills the
+                  row and wraps naturally instead of a rigid 3-col grid that
+                  squeezes the time on narrow phones. */}
+              <div className="flex flex-wrap gap-2">
                 {daySlots.map((s) => (
-                  <TimeSlotCard key={s.id} slot={s} onClick={() => onPick(s)} />
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => onPick(s)}
+                    className="min-h-[48px] min-w-[88px] flex-1 basis-[88px] rounded-xl border border-ink-100 bg-cream-50 px-3 py-2.5 text-center font-display text-[15px] font-medium text-ink-900 transition hover:border-ink-300 hover:shadow-soft active:scale-[0.98] sm:flex-none"
+                  >
+                    {s.timeLabel}
+                  </button>
                 ))}
               </div>
             </div>
