@@ -6597,8 +6597,16 @@ function MobileChatShell(props: MobileChatShellProps) {
       <header className="flex shrink-0 items-center gap-2 border-b border-ink-100 px-3 pt-safe">
         <button
           type="button"
-          onClick={onResetConversation}
-          aria-label="Back to start"
+          onClick={() => {
+            // BACK ≠ START OVER. The arrow steps back through the conversation
+            // (previous stage / collapses availability) via browser history,
+            // preserving service + time context and the message thread. The
+            // explicit "Start over" control is the ONLY full reset.
+            if (typeof window !== "undefined" && window.history.length > 1) {
+              window.history.back();
+            }
+          }}
+          aria-label="Back"
           className="-ml-1 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink-700 active:bg-cream-100"
         >
           <span aria-hidden className="text-xl leading-none">←</span>
@@ -6612,7 +6620,7 @@ function MobileChatShell(props: MobileChatShellProps) {
               {stylistName}
             </p>
             <p className="truncate text-[11px] leading-snug text-ink-500">
-              Booking helper
+              Booking with {stylistName}
             </p>
           </div>
         </div>
@@ -6629,9 +6637,10 @@ function MobileChatShell(props: MobileChatShellProps) {
           <button
             type="button"
             onClick={onResetConversation}
+            aria-label="Start over — clear this conversation"
             className="shrink-0 rounded-full px-3 py-2 text-xs font-medium text-ink-500 active:bg-cream-100"
           >
-            New
+            Start over
           </button>
         )}
       </header>
