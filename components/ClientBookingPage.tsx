@@ -8140,6 +8140,17 @@ function TimeStage({
     return Array.from(groups.entries());
   }, [visibleSlots]);
 
+  // Date-first navigation (Square-style): pick a DAY, then see only that day's
+  // times — instead of stacking every day's wall of slots. activeDay indexes
+  // into `grouped`. Reset to the first day whenever the week (and thus the day
+  // list) changes, clamped so it never points past the available days.
+  const [activeDay, setActiveDay] = useState(0);
+  useEffect(() => {
+    setActiveDay(0);
+  }, [activeWeek]);
+  const safeActiveDay = activeDay < grouped.length ? activeDay : 0;
+  const activeDaySlots = grouped[safeActiveDay]?.[1] ?? [];
+
   const weekTabs: { idx: number; label: string }[] = [
     { idx: 0, label: "This week" },
     { idx: 1, label: "Next week" },
@@ -8218,38 +8229,71 @@ function TimeStage({
         })}
       </div>
 
-      <div className="mt-6 space-y-6">
-        {grouped.length === 0 ? (
-          <p className="text-sm text-ink-500">
-            No openings this week. Try another week.
+      {grouped.length === 0 ? (
+        <p className="mt-6 text-sm text-ink-500">
+          No openings this week. Try another week.
+        </p>
+      ) : (
+        <>
+          {/* DAY STRIP — date-first navigation. Tap a day to see only its
+              times (Square-style), instead of stacking every day's wall of
+              slots. Horizontal-scroll on narrow screens. */}
+          <div
+            className="mt-4 flex gap-2 overflow-x-auto pb-1"
+            role="tablist"
+            aria-label="Choose a day"
+          >
+            {grouped.map(([day, daySlots], i) => {
+              const active = i === safeActiveDay;
+              // "Fri, Jun 19" → top line "Fri", bottom "Jun 19".
+              const [dow, date] = day.split(", ");
+              return (
+                <button
+                  key={day}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setActiveDay(i)}
+                  className={cn(
+                    "flex shrink-0 flex-col items-center rounded-2xl border px-3.5 py-2 transition",
+                    active
+                      ? "border-ink-900 bg-ink-900 text-cream-50"
+                      : "border-ink-100 bg-cream-50 text-ink-700 hover:border-ink-300"
+                  )}
+                >
+                  <span className="text-[13px] font-medium leading-tight">{dow}</span>
+                  <span className={cn("text-[11px] leading-tight", active ? "text-cream-50/80" : "text-ink-400")}>
+                    {date}
+                  </span>
+                  <span className={cn("mt-0.5 text-[10px] leading-none", active ? "text-cream-50/70" : "text-ink-400")}>
+                    {daySlots.length} {daySlots.length === 1 ? "time" : "times"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Selected day heading + that day's times in a UNIFORM grid — every
+              cell the same size (no last-row stretching), equal tap targets for
+              accessibility, full time labels (no truncation). Responsive
+              3→4→5 columns by width. */}
+          <p className="mt-5 font-display text-sm font-medium text-ink-900">
+            {grouped[safeActiveDay]?.[0]}
           </p>
-        ) : (
-          grouped.map(([day, daySlots]) => (
-            <div key={day}>
-              <p className="mb-2 font-display text-xs uppercase tracking-[0.16em] text-ink-500">
-                {day} · {daySlots.length} {daySlots.length === 1 ? "time" : "times"}
-              </p>
-              {/* Time-only chips that reflow by width. The day heading above
-                  owns the date, so cards show ONLY the time — no redundant
-                  eyebrow, no truncation at any screen size. flex-wrap fills the
-                  row and wraps naturally instead of a rigid 3-col grid that
-                  squeezes the time on narrow phones. */}
-              <div className="flex flex-wrap gap-2">
-                {daySlots.map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => onPick(s)}
-                    className="min-h-[48px] min-w-[88px] flex-1 basis-[88px] rounded-xl border border-ink-100 bg-cream-50 px-3 py-2.5 text-center font-display text-[15px] font-medium text-ink-900 transition hover:border-ink-300 hover:shadow-soft active:scale-[0.98] sm:flex-none"
-                  >
-                    {s.timeLabel}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))
-        )}
-      </div>
+          <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
+            {activeDaySlots.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => onPick(s)}
+                className="flex min-h-[48px] items-center justify-center rounded-xl border border-ink-100 bg-cream-50 px-2 py-2.5 text-center font-display text-[15px] font-medium text-ink-900 transition hover:border-ink-300 hover:shadow-soft active:scale-[0.98]"
+              >
+                {s.timeLabel}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
       </>
       )}
     </div>
