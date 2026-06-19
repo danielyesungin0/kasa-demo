@@ -1418,9 +1418,33 @@ export function ClientBookingPage({
     //    deterministic parser gave us (it's better than silence).
     const detIntent = parseClientMessage(trimmed, context);
 
-    // Pending-clarification re-ask comes before AI: a typed answer to a
-    // pending clarification should always go through the deterministic
-    // path, even if it's low-signal otherwise.
+    // ── TOP-LEVEL ANSWER-FIRST GUARD ───────────────────────────────────────
+    // A QUESTION must be answered, in ANY state, before any other routing —
+    // even mid-clarification, even when the message contains service words that
+    // make the parser classify it as `book` (e.g. "what's the difference
+    // between SHORT and MEDIUM?" parses as a haircut book, which previously
+    // bulldozed past the question). This runs FIRST so no downstream
+    // interceptor (clarification re-ask, booking, etc.) can swallow a question.
+    // It only fires for genuinely question-shaped messages, not commitments.
+    if (looksLikeConsultationQuestion(trimmed)) {
+      // If we're mid-clarification, inline the pending question so "the two" /
+      // "short and medium" is grounded in the actual choice being offered.
+      const enriched = context.pendingClarification
+        ? `${trimmed}\n(They're choosing between options for: "${context.pendingClarification.question}". Answer that specific comparison using the services list.)`
+        : trimmed;
+      const ai = await fetchChatResponse(enriched);
+      if (ai && ai.reply) {
+        renderChatResponse(ai, trimmed);
+        // If a clarification was open, re-pose it warmly so the thread keeps
+        // moving (we answered — we didn't fail to understand).
+        if (context.pendingClarification) reAskClarification({ soft: true });
+        return;
+      }
+      // AI unavailable → fall through to normal routing rather than dead-end.
+    }
+
+    // Pending-clarification re-ask: a typed answer to a pending clarification
+    // should go through the deterministic path, even if it's low-signal.
     const isLowSignal =
       detIntent.kind === "unknown" ||
       (detIntent.kind === "book" && detIntent.tags.length === 0);
@@ -1429,29 +1453,6 @@ export function ClientBookingPage({
       detIntent.kind !== "clarification_answer" &&
       isLowSignal
     ) {
-      // ANSWER-FIRST even mid-clarification: if the user asks a real question
-      // about the choice they're being asked to make ("what's the difference
-      // between the two?"), DON'T re-ask "didn't catch that" — that's the exact
-      // trust break. Let the AI answer the question, then re-surface the same
-      // clarification so they can still pick. We keep pendingClarification set
-      // (don't clear it) so the follow-up answer still resolves the service.
-      if (looksLikeConsultationQuestion(trimmed)) {
-        // Give the AI the CONTEXT of what's being compared. The user's "the
-        // two" / "the difference" refers to the pending clarification's options
-        // (e.g. short vs medium-to-long haircut), which aren't in the raw
-        // message. Inline the pending question so the AI grounds its answer in
-        // the actual choice instead of replying generically.
-        const enriched = `${trimmed}\n(They're choosing between options for: "${context.pendingClarification.question}". Answer that specific comparison using the services list.)`;
-        const ai = await fetchChatResponse(enriched);
-        if (ai && ai.reply) {
-          renderChatResponse(ai, trimmed);
-          // Re-show the pending question warmly (soft) — we answered, didn't
-          // fail to understand, so don't say "didn't catch that".
-          reAskClarification({ soft: true });
-          return;
-        }
-        // AI unavailable → fall through to the normal re-ask below.
-      }
       reAskClarification();
       return;
     }
