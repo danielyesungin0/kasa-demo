@@ -205,6 +205,9 @@ export default function DashboardPage() {
 
   const headerRight = (
     <nav className="flex items-center gap-0.5 text-sm sm:gap-1">
+      <Link href="/dashboard/questions" className="inline-flex min-h-[44px] items-center rounded-full px-3 text-sm text-ink-700 hover:bg-cream-100">
+        Questions
+      </Link>
       <Link href="/dashboard/services" className="inline-flex min-h-[44px] items-center rounded-full px-3 text-sm text-ink-700 hover:bg-cream-100">
         Settings
       </Link>
