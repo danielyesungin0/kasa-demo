@@ -754,11 +754,28 @@ export function ClientBookingPage({
     // When the caller already pushed its own lead-in (e.g. a refinement ack
     // like "Here are more openings…"), suppress the recommendation intro so the
     // user doesn't see two near-identical messages stacked.
-    suppressIntro = false
+    suppressIntro = false,
+    // The FULL service slot set, for computing exploration-chip availability.
+    // Pass it when the caller just fetched it — the cache read alone can be cold
+    // on some paths, which silently dropped the chips. Falls back to the cache
+    // then the displayed slots when omitted.
+    allServiceSlots?: TimeSlot[]
   ) {
     const svc = context.selectedService ?? context.lastRecommendedService;
+    // Chip availability needs the FULL service slot set. Prefer an explicitly
+    // passed set (callers that just fetched it), then the cache, then — as a
+    // last resort — the displayed slots. The cache read alone was unreliable
+    // here: on the clarification path it could be cold/mis-keyed when state
+    // hadn't flushed, which silently dropped all the exploration chips
+    // (Earlier/Later/Next day/See all), so the user couldn't see more times.
+    const fullServiceSlots =
+      allServiceSlots && allServiceSlots.length > 0
+        ? allServiceSlots
+        : svc && cachedRealSlots(svc.id, slug).length > 0
+          ? cachedRealSlots(svc.id, slug)
+          : slots;
     const chipAvailability = computeChipAvailability(
-      svc ? cachedRealSlots(svc.id, slug) : [],
+      fullServiceSlots,
       anchorDateKey,
       currentWeekShift,
       slots
@@ -2239,7 +2256,7 @@ export function ClientBookingPage({
       const weekShift = scoped[0]
         ? deriveWeekShift(scoped[0].dateKey)
         : null;
-      showSlots(scoped, scoped[0]?.dateKey ?? null, weekShift);
+      showSlots(scoped, scoped[0]?.dateKey ?? null, weekShift, false, allSlots);
     }
   }
 
@@ -2989,7 +3006,7 @@ export function ClientBookingPage({
       // recommendation turn honors any day/time the user already stated;
       // showSlots → buildRecommendation handles selection + limiting.
       const ranked = rankTimeSlots(allSlots, context.lastIntentTimeHints);
-      showSlots(ranked, ranked[0]?.dateKey ?? null);
+      showSlots(ranked, ranked[0]?.dateKey ?? null, null, false, allSlots);
       return;
     }
 
@@ -3202,7 +3219,7 @@ export function ClientBookingPage({
       if (svc) {
         const allSlots = cachedRealSlots(svc.id, slug);
         const ranked = rankTimeSlots(allSlots, context.lastIntentTimeHints);
-        showSlots(ranked, ranked[0]?.dateKey ?? null);
+        showSlots(ranked, ranked[0]?.dateKey ?? null, null, false, allSlots);
       }
       return;
     }
@@ -3381,7 +3398,7 @@ export function ClientBookingPage({
       ));
       const scoped = scopeSlotsByHints(allSlots, hints);
       const ranked = rankTimeSlots(scoped, hints).slice(0, 6);
-      showSlots(ranked, ranked[0]?.dateKey ?? null);
+      showSlots(ranked, ranked[0]?.dateKey ?? null, null, false, allSlots);
     });
   }
 
@@ -3469,7 +3486,7 @@ export function ClientBookingPage({
         id: `t-addon-added-${Date.now()}`,
         text: `Added ${svc.name}.`,
       });
-      showSlots(ranked, ranked[0]?.dateKey ?? null);
+      showSlots(ranked, ranked[0]?.dateKey ?? null, null, false, allSlots);
       return;
     }
 
