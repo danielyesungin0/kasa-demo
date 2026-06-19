@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Reveal, RevealGroup, RevealItem } from "@/components/Reveal";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 
 const PROFESSIONS = [
   "stylists",
@@ -160,7 +161,7 @@ export default function HomePage() {
         <RevealGroup className="mt-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
           {[
             ["Understands how people text", "“haircut tmrw at 130” just works. It reads natural language, typos, and shorthand — no rigid forms."],
-            ["Speaks your clients' language", "English, Korean, or a mix — it replies in whatever language they write in, warmly and in your voice."],
+            ["Warm, on-brand replies", "It chats in clear, friendly English that sounds like you — never robotic, never a rigid form."],
             ["Shows only real openings", "Pulls live availability from your Square calendar, so clients only ever see times you can actually take."],
             ["Confirms before booking", "Nothing is booked without the client's say-so. No double-bookings, no surprises on your calendar."],
             ["Handles the odd ones", "Unsupported services, group requests, special asks — it sends you a clean summary instead of guessing."],
@@ -214,7 +215,7 @@ export default function HomePage() {
                 "Unlimited AI booking chats",
                 "Real-time Square availability",
                 "Confirmation + reminder texts",
-                "Multilingual replies (EN / KO / 中文)",
+                "Natural, friendly chat replies",
                 "Reschedule & cancel for clients",
                 "Smart handoff summaries to you",
               ].map((f) => (
@@ -261,8 +262,8 @@ export default function HomePage() {
             a="Your live Square availability. Clients only see times you can actually take, and nothing is booked until they confirm."
           />
           <Faq
-            q="What languages does it speak?"
-            a="It replies in the language your client writes in — English, Korean, and Simplified Chinese today, with more on the way."
+            q="How well does it understand my clients?"
+            a="It's built for natural English — typos, shorthand like “tmrw at 130,” and casual phrasing all just work. If a request is unclear or unusual, it asks a quick follow-up or hands it to you rather than guessing."
           />
           <Faq
             q="Do clients get reminders?"
@@ -370,7 +371,73 @@ function Faq({ q, a }: { q: string; a: string }) {
  * A small, looping mock of the booking chat so visitors see what their clients
  * will experience. Static (no real fetch) — purely illustrative.
  */
+// The demo conversation, as ordered "steps". Each is revealed in sequence,
+// with a brief Shen-is-typing pause before every bot reply, then the whole
+// thing loops. Falls back to all-steps-shown under prefers-reduced-motion.
+type ChatStep =
+  | { kind: "user"; text: string }
+  | { kind: "bot"; text: string }
+  | { kind: "chips"; items: string[] }
+  | { kind: "confirm" };
+
+const CHAT_STEPS: ChatStep[] = [
+  { kind: "user", text: "i need a haircut tomorrow at 130" },
+  { kind: "bot", text: "Yes — 1:30 PM tomorrow is open 💛 Want me to grab it?" },
+  { kind: "chips", items: ["1:30 PM", "2:00 PM", "2:30 PM"] },
+  { kind: "user", text: "perfect, let's do 1:30" },
+  { kind: "bot", text: "Booked! See you tomorrow at 1:30 PM 💛" },
+  { kind: "confirm" },
+];
+
+// Per-step pacing (ms). Bot steps get a typing pause baked into the reveal.
+const STEP_DELAY: Record<ChatStep["kind"], number> = {
+  user: 900,
+  bot: 1300,
+  chips: 700,
+  confirm: 900,
+};
+const LOOP_PAUSE = 2600;
+
 function ChatPreview() {
+  const reduce = useReducedMotion();
+  // How many steps are currently visible. Reduced-motion → show them all.
+  const [shown, setShown] = useState(reduce ? CHAT_STEPS.length : 0);
+  // Whether a typing bubble is showing before the next (bot) step.
+  const [typing, setTyping] = useState(false);
+
+  useEffect(() => {
+    if (reduce) return; // no animation; everything already visible
+    let timer: ReturnType<typeof setTimeout>;
+
+    function schedule(next: number) {
+      if (next > CHAT_STEPS.length) {
+        // finished — pause, then restart the loop
+        timer = setTimeout(() => {
+          setShown(0);
+          schedule(1);
+        }, LOOP_PAUSE);
+        return;
+      }
+      const step = CHAT_STEPS[next - 1];
+      const reveal = () => {
+        setTyping(false);
+        setShown(next);
+        timer = setTimeout(() => schedule(next + 1), STEP_DELAY[step.kind]);
+      };
+      // Show a typing indicator briefly before each bot reply.
+      if (step.kind === "bot") {
+        setTyping(true);
+        timer = setTimeout(reveal, 850);
+      } else {
+        reveal();
+      }
+    }
+
+    setShown(0);
+    timer = setTimeout(() => schedule(1), 600);
+    return () => clearTimeout(timer);
+  }, [reduce]);
+
   return (
     <div className="relative">
       <div
@@ -392,42 +459,67 @@ function ChatPreview() {
             </p>
           </div>
         </div>
-        {/* messages */}
-        <div className="space-y-2.5 p-4">
-          <Bubble side="user">i need a haircut tomorrow at 130</Bubble>
-          <Bubble side="bot">
-            Yes — 1:30 PM tomorrow is open 💛 Want me to grab it?
-          </Bubble>
-          <div className="flex flex-wrap gap-2 pt-1">
-            <PreviewChip>1:30 PM</PreviewChip>
-            <PreviewChip>2:00 PM</PreviewChip>
-            <PreviewChip>2:30 PM</PreviewChip>
-          </div>
-          <Bubble side="user">perfect, let&apos;s do 1:30</Bubble>
-          <Bubble side="bot">
-            Booked! See you tomorrow at 1:30 PM 💛
-          </Bubble>
-
-          {/* Confirmation → calendar. Our own generic visual — no third-party
-              branding/screenshots — illustrating that the booking lands on the
-              provider's calendar. */}
-          <div className="mt-1 rounded-2xl border border-success/30 bg-success-soft/40 p-3.5">
-            <div className="flex items-center gap-2">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-success text-cream-50">
-                <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M5 12.5L10 17.5L19 7.5" />
-                </svg>
-              </span>
-              <p className="text-[13px] font-medium text-ink-900">
-                Booking confirmed
-              </p>
-            </div>
-            <p className="mt-1.5 pl-7 text-[12.5px] leading-snug text-ink-600">
-              Added to your calendar · client gets a text reminder before it.
-            </p>
-          </div>
+        {/* messages — fixed min-height so the loop doesn't jump the layout */}
+        <div className="min-h-[340px] space-y-2.5 p-4">
+          <AnimatePresence>
+            {CHAT_STEPS.slice(0, shown).map((step, i) => (
+              <motion.div
+                key={i}
+                initial={reduce ? false : { opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, ease: "easeOut" }}
+              >
+                <ChatStepView step={step} />
+              </motion.div>
+            ))}
+          </AnimatePresence>
+          {typing && <TypingDots />}
         </div>
       </div>
+    </div>
+  );
+}
+
+function ChatStepView({ step }: { step: ChatStep }) {
+  if (step.kind === "user") return <Bubble side="user">{step.text}</Bubble>;
+  if (step.kind === "bot") return <Bubble side="bot">{step.text}</Bubble>;
+  if (step.kind === "chips") {
+    return (
+      <div className="flex flex-wrap gap-2 pt-1">
+        {step.items.map((c) => (
+          <PreviewChip key={c}>{c}</PreviewChip>
+        ))}
+      </div>
+    );
+  }
+  // confirm
+  return (
+    <div className="mt-1 rounded-2xl border border-success/30 bg-success-soft/40 p-3.5">
+      <div className="flex items-center gap-2">
+        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-success text-cream-50">
+          <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M5 12.5L10 17.5L19 7.5" />
+          </svg>
+        </span>
+        <p className="text-[13px] font-medium text-ink-900">Booking confirmed</p>
+      </div>
+      <p className="mt-1.5 pl-7 text-[12.5px] leading-snug text-ink-600">
+        Added to your calendar · client gets a text reminder before it.
+      </p>
+    </div>
+  );
+}
+
+function TypingDots() {
+  return (
+    <div className="flex w-fit items-center gap-1 rounded-2xl rounded-tl-sm bg-cream-100 px-3.5 py-3">
+      {[0, 150, 300].map((d) => (
+        <span
+          key={d}
+          className="h-1.5 w-1.5 rounded-full bg-ink-400 animate-pulse"
+          style={{ animationDelay: `${d}ms` }}
+        />
+      ))}
     </div>
   );
 }
