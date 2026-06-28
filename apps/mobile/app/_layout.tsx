@@ -50,7 +50,9 @@ export default function RootLayout() {
         >
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="thread/[id]" />
-          {/* profile, settings added in later steps. */}
+          <Stack.Screen name="client/[id]" />
+          <Stack.Screen name="book" options={{ presentation: "modal" }} />
+          {/* settings added in a later step. */}
         </Stack>
       </SafeAreaProvider>
     </GestureHandlerRootView>

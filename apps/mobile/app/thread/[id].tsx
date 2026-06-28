@@ -1,34 +1,177 @@
-import { View } from "react-native";
+import { useMemo, useRef, useState, useCallback } from "react";
+import {
+  View,
+  Pressable,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
+  Linking,
+} from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Pressable } from "react-native";
 import { Icon } from "@/components/ui/Icon";
+import { Avatar } from "@/components/ui/Avatar";
+import { ChannelDot } from "@/components/ui/ChannelDot";
 import { Text } from "@/components/ui/Text";
+import { Composer } from "@/components/thread/Composer";
+import { MessageBubble } from "@/components/thread/MessageBubble";
+import { BookingNudge, shouldShowNudge } from "@/components/thread/BookingNudge";
+import { useThread, type ThreadMessage } from "@/lib/useThread";
+import { channelState } from "@/lib/channelState";
+import { sendMessage } from "@/lib/sendMessage";
+import { channels } from "@/theme/colors";
 import { colors } from "@/theme/colors";
 
-// Thread — STUB. Full thread (bubbles, nudge, Instagram-style composer) is the
-// next sub-step. This stands so Inbox navigation works and the build is valid.
 export default function ThreadScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const listRef = useRef<FlatList>(null);
+
+  const { convo, messages, loading, appendOptimistic, reconcile, dropOptimistic } =
+    useThread(id);
+  const [dismissedNudge, setDismissedNudge] = useState(false);
+  const [windowBanner, setWindowBanner] = useState<string | null>(null);
+
+  const chState = useMemo(
+    () => (convo ? channelState(convo.channel_type, convo.window_expires_at) : null),
+    [convo],
+  );
+
+  const scrollToEnd = useCallback(() => {
+    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+  }, []);
+
+  async function doSend(text: string) {
+    const tempId = appendOptimistic(text);
+    scrollToEnd();
+    const result = await sendMessage(id, text);
+    if (result.ok) {
+      reconcile(tempId, "sent");
+    } else if (result.blocked) {
+      // Honest closed-window: remove the optimistic bubble, surface the state.
+      dropOptimistic(tempId);
+      const label = result.channel ? channels[result.channel as keyof typeof channels].label : "the channel";
+      setWindowBanner(`Reply window closed — open ${label} to continue.`);
+    } else {
+      reconcile(tempId, "failed");
+    }
+  }
+
+  function retry(msg: ThreadMessage) {
+    if (!msg.body) return;
+    dropOptimistic(msg._tempId ?? msg.id);
+    void doSend(msg.body);
+  }
+
+  function openExternal() {
+    if (convo) Linking.openURL("https://").catch(() => {}); // TODO(oauth/deep-link): open the real channel app (Phase 4)
+  }
+
+  if (loading || !convo) {
+    return (
+      <View className="flex-1 items-center justify-center bg-bg" style={{ paddingTop: insets.top }}>
+        <ActivityIndicator color={colors.ink4} />
+      </View>
+    );
+  }
+
+  const firstName = convo.client.name.split(" ")[0];
+  const showNudge =
+    !dismissedNudge &&
+    chState?.canSend &&
+    shouldShowNudge(convo.intent, convo.intent_payload);
+
   return (
     <View className="flex-1 bg-bg" style={{ paddingTop: insets.top }}>
-      <View className="flex-row items-center border-b border-line px-3 py-2" style={{ minHeight: 54, gap: 8 }}>
-        <Pressable
-          onPress={() => router.back()}
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-          className="items-center justify-center rounded-full"
-          style={{ width: 42, height: 42 }}
-        >
+      {/* nav header: back · tappable name→profile · client-details */}
+      <View className="flex-row items-center border-b border-line px-3.5" style={{ minHeight: 54, gap: 8, paddingVertical: 9 }}>
+        <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Back" className="items-center justify-center rounded-full active:bg-bg-warm" style={{ width: 42, height: 42 }}>
           <Icon name="back" size={22} color={colors.ink} />
         </Pressable>
-        <Text variant="section">Thread</Text>
+        <Pressable
+          onPress={() => router.push(`/client/${convo.client_id}`)}
+          accessibilityRole="button"
+          accessibilityLabel={`${convo.client.name} profile`}
+          className="flex-1 flex-row items-center"
+          style={{ gap: 10, minWidth: 0 }}
+        >
+          <Avatar name={convo.client.name} size={32} />
+          <View style={{ minWidth: 0 }}>
+            <Text numberOfLines={1} style={{ fontSize: 15.5, fontFamily: "Inter_600SemiBold", color: colors.ink }}>
+              {convo.client.name}
+            </Text>
+            <View className="flex-row items-center" style={{ gap: 5 }}>
+              <ChannelDot ch={convo.channel_type} size={12} />
+              <Text className="text-ink-3" style={{ fontSize: 12 }}>
+                {channels[convo.channel_type].label}
+              </Text>
+            </View>
+          </View>
+        </Pressable>
+        <Pressable onPress={() => router.push(`/client/${convo.client_id}`)} accessibilityRole="button" accessibilityLabel="Client details" className="items-center justify-center rounded-full active:bg-bg-warm" style={{ width: 40, height: 40 }}>
+          <Icon name="user" size={20} color={colors.ink2} />
+        </Pressable>
       </View>
-      <View className="flex-1 items-center justify-center px-gutter">
-        <Text variant="body" className="text-ink-3">Thread {id} — coming next.</Text>
-      </View>
+
+      <KeyboardAvoidingView
+        className="flex-1"
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={insets.top + 54}
+      >
+        <FlatList
+          ref={listRef}
+          data={messages}
+          keyExtractor={(m) => m.id}
+          className="flex-1"
+          contentContainerStyle={{ padding: 16, paddingBottom: 14 }}
+          renderItem={({ item }) => <MessageBubble msg={item} onRetry={retry} />}
+          onContentSizeChange={scrollToEnd}
+          showsVerticalScrollIndicator={false}
+        />
+
+        {/* booking nudge — real intent only, dismissible */}
+        {showNudge && convo.intent_payload ? (
+          <BookingNudge
+            payload={convo.intent_payload}
+            firstName={firstName}
+            onBook={() => router.push(`/book?conversation=${id}`)} // TODO(book-sheet): wire to the real Book sheet when built
+            onDismiss={() => setDismissedNudge(true)}
+          />
+        ) : null}
+
+        {/* closed-window banner (honest) */}
+        {!chState?.canSend && chState?.banner ? (
+          <View
+            className={`mb-2 flex-row rounded-[14px] px-3.5 py-3 ${chState.banner.kind === "err" ? "bg-err-soft" : "bg-warn-soft"}`}
+            style={{ gap: 11, marginHorizontal: 14 }}
+          >
+            <Icon name="clock" size={15} color={chState.banner.kind === "err" ? colors.errInk : colors.warnInk} />
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={{ fontSize: 12.5, fontFamily: "Inter_600SemiBold", color: chState.banner.kind === "err" ? colors.errInk : colors.warnInk }}>
+                {chState.banner.title}
+              </Text>
+              <Text style={{ fontSize: 12.5, lineHeight: 17, color: chState.banner.kind === "err" ? colors.errInk : colors.warnInk }}>
+                {chState.banner.body}
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
+        {windowBanner ? (
+          <View className="mb-2 rounded-[14px] bg-warn-soft px-3.5 py-2.5" style={{ marginHorizontal: 14 }}>
+            <Text style={{ fontSize: 12.5, color: colors.warnInk }}>{windowBanner}</Text>
+          </View>
+        ) : null}
+
+        <Composer
+          state={chState ?? { canSend: true }}
+          onSend={doSend}
+          onBook={() => router.push(`/book?conversation=${id}`)} // TODO(book-sheet)
+          onOpenExternal={openExternal}
+        />
+      </KeyboardAvoidingView>
     </View>
   );
 }
