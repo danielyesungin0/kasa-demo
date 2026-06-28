@@ -6,3 +6,9 @@ project_id = "cridgriesmapykmeqmuo"
 # (ANTHROPIC_API_KEY) set via `supabase secrets set`.
 [functions.parse-intent]
 verify_jwt = false
+
+# square-availability: read-only slot computation. verify_jwt=false for now so
+# it's testable before the app exists; tighten to true once the app sends a
+# user session (it returns only the stylist's own availability, no secrets).
+[functions.square-availability]
+verify_jwt = false
