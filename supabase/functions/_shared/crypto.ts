@@ -11,16 +11,19 @@
 // same as the original. NOT reimplemented with WebCrypto, which would change the
 // scheme and make existing ciphertext undecryptable.
 //
-// Preserved deliberate behaviors from the original:
-//   - dev-mode passthrough when no key is configured
+// Preserved deliberate behavior from the original:
 //   - legacy-plaintext fallback in decrypt (read rows stored before encryption)
 //
-// NOTE (flagged to owner, not silently changed): the original only throws on a
-// missing key when NODE_ENV==="production". Edge Functions don't set that, so a
-// missing ENCRYPTION_KEY would silently passthrough PLAINTEXT tokens. Because
-// this path handles OAuth tokens, the CALLER (square-create-booking) refuses to
-// run if ENCRYPTION_KEY is unset — see assertEncryptionKey(). The crypto
-// functions themselves keep the original passthrough semantics unchanged.
+// CHANGED vs the original (corrected check, NOT a redesign): the old code only
+// threw on a missing key when NODE_ENV==="production" and otherwise PASSED
+// PLAINTEXT THROUGH. That NODE_ENV gate is a Node assumption that's wrong in
+// Edge Functions (NODE_ENV is unset there), so it would silently store/return
+// plaintext tokens. Crypto is shared code — any future importer must be
+// physically unable to hit the plaintext path. So encrypt/decrypt now HARD-FAIL
+// at the point of use when ENCRYPTION_KEY is missing/short, regardless of
+// runtime. The AES-256-GCM scheme + on-disk format are byte-for-byte identical
+// to the original, so existing ciphertext still decrypts — ONLY the
+// missing-key behavior changed (throw, never passthrough).
 // ============================================================
 
 import {
@@ -37,21 +40,22 @@ const IV_LEN = 12; // 96 bits, recommended for GCM
 const TAG_LEN = 16;
 const KEY_LEN = 32;
 
-function getMasterKey(): Buffer | null {
-  const key = Deno.env.get("ENCRYPTION_KEY");
-  if (!key || key.length < 32) return null;
-  return Buffer.from(key, "utf8");
-}
-
-/** Hard guard for token-handling callers: refuse to operate without a key,
- *  rather than silently passing through plaintext OAuth tokens. */
-export function assertEncryptionKey(): void {
+/** Returns the master key, or THROWS if ENCRYPTION_KEY is missing/short.
+ *  Never returns null — there is no plaintext-passthrough path anymore. */
+function getMasterKey(): Buffer {
   const key = Deno.env.get("ENCRYPTION_KEY");
   if (!key || key.length < 32) {
     throw new Error(
-      "ENCRYPTION_KEY missing/short — refusing to handle Square tokens in plaintext",
+      "ENCRYPTION_KEY missing/short — refusing to handle secrets in plaintext",
     );
   }
+  return Buffer.from(key, "utf8");
+}
+
+/** Belt-and-suspenders guard callers can run up front to fail fast before doing
+ *  any work. encrypt/decrypt also hard-fail on their own (see getMasterKey). */
+export function assertEncryptionKey(): void {
+  getMasterKey();
 }
 
 export function encryptSecret(
@@ -60,8 +64,7 @@ export function encryptSecret(
   if (plaintext == null) return null;
   if (plaintext === "") return "";
 
-  const masterKey = getMasterKey();
-  if (!masterKey) return plaintext; // dev-mode passthrough (unchanged)
+  const masterKey = getMasterKey(); // throws if no key — never passthrough
 
   const salt = randomBytes(SALT_LEN);
   const iv = randomBytes(IV_LEN);
@@ -83,8 +86,7 @@ export function decryptSecret(
   if (value == null) return null;
   if (value === "") return "";
 
-  const masterKey = getMasterKey();
-  if (!masterKey) return value; // dev-mode passthrough (unchanged)
+  const masterKey = getMasterKey(); // throws if no key — never passthrough
 
   let blob: Buffer;
   try {

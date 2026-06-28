@@ -18,3 +18,22 @@ verify_jwt = false
 # SQUARE_* secrets set before deploy. Deploy only after the sandbox is linked.
 [functions.square-create-booking]
 verify_jwt = true
+
+# Channel webhooks are called by external providers (Meta/WeChat/Twilio/Kakao),
+# never by the app — they authenticate via provider signatures (Phase 4), not a
+# Supabase JWT. So verify_jwt=false; signature checks are the real gate.
+[functions.webhook-instagram]
+verify_jwt = false
+
+[functions.webhook-wechat]
+verify_jwt = false
+
+[functions.webhook-sms]
+verify_jwt = false
+
+[functions.webhook-kakao]
+verify_jwt = false
+
+# send-message acts on the stylist's behalf — authenticated session required.
+[functions.send-message]
+verify_jwt = true
