@@ -1,23 +1,16 @@
 import { Tabs } from "expo-router";
 import { View, Pressable } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  Sun,
-  Inbox as InboxIcon,
-  Calendar,
-  Users,
-  Menu,
-  type LucideIcon,
-} from "lucide-react-native";
+import { Icon, type IconName } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
 import { colors } from "@/theme/colors";
 
-const TABS: { name: string; label: string; icon: LucideIcon }[] = [
-  { name: "index", label: "Today", icon: Sun },
-  { name: "inbox", label: "Inbox", icon: InboxIcon },
-  { name: "calendar", label: "Calendar", icon: Calendar },
-  { name: "clients", label: "Clients", icon: Users },
-  { name: "more", label: "More", icon: Menu },
+const TABS: { name: string; label: string; icon: IconName }[] = [
+  { name: "index", label: "Today", icon: "today" },
+  { name: "inbox", label: "Inbox", icon: "inbox" },
+  { name: "calendar", label: "Calendar", icon: "calendar" },
+  { name: "clients", label: "Clients", icon: "clients" },
+  { name: "more", label: "More", icon: "menu" },
 ];
 
 // Custom tab bar matching the prototype: white bar, top hairline, active tab in
@@ -33,7 +26,6 @@ function TabBar({ state, navigation }: any) {
         const tab = TABS.find((t) => t.name === route.name);
         if (!tab) return null;
         const focused = state.index === index;
-        const Icon = tab.icon;
         const tint = focused ? colors.accentStrong : colors.ink4;
         return (
           <Pressable
@@ -55,7 +47,7 @@ function TabBar({ state, navigation }: any) {
             className="flex-1 items-center justify-center gap-1 pt-2.5 pb-2"
             style={{ minHeight: 44 }}
           >
-            <Icon size={22} color={tint} strokeWidth={1.8} />
+            <Icon name={tab.icon} size={22} color={tint} strokeWidth={1.8} />
             <Text
               variant="label"
               maxScale={1.2}

@@ -1,15 +1,132 @@
-import { Screen, ScreenHeader } from "@/components/ui/Screen";
+import { useMemo, useState } from "react";
+import { View, FlatList, Pressable, TextInput, ActivityIndicator } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
+import { Icon } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
-import { View } from "react-native";
+import { InboxRow } from "@/components/inbox/InboxRow";
+import { useConversations } from "@/lib/useConversations";
+import { supabase } from "@/lib/supabase";
+import { colors } from "@/theme/colors";
+import type { InboxItem } from "@/lib/types";
 
-// Inbox — placeholder; full screen built in a later step.
+const FILTERS = [
+  { key: "all", label: "All" },
+  { key: "unread", label: "Unread" },
+  { key: "booked", label: "Booked" },
+] as const;
+type FilterKey = (typeof FILTERS)[number]["key"];
+
+const TAB_BAR_HEIGHT = 60;
+
 export default function InboxScreen() {
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const { items, loading, reload } = useConversations();
+  const [filter, setFilter] = useState<FilterKey>("all");
+
+  const list = useMemo(() => {
+    if (filter === "unread") return items.filter((i) => i.unread);
+    if (filter === "booked") return items.filter((i) => i.hasBooking);
+    return items;
+  }, [items, filter]);
+
+  async function markRead(item: InboxItem) {
+    await supabase.from("conversations").update({ unread: false }).eq("id", item.id);
+    void reload();
+  }
+  async function archive(item: InboxItem) {
+    await supabase.from("conversations").update({ archived: true }).eq("id", item.id);
+    void reload();
+  }
+  function openThread(item: InboxItem) {
+    router.push(`/thread/${item.id}`);
+  }
+
   return (
-    <Screen>
-      <ScreenHeader title="Inbox" />
-      <View className="px-gutter">
-        <Text variant="body">Inbox screen — coming next.</Text>
+    <View className="flex-1 bg-bg" style={{ paddingTop: insets.top }}>
+      {/* header */}
+      <View className="px-gutter pb-2.5 pt-3">
+        <View className="mb-3 flex-row items-center justify-between" style={{ minHeight: 40 }}>
+          <Text variant="title-lg">Inbox</Text>
+          <Pressable
+            onPress={reload}
+            accessibilityRole="button"
+            accessibilityLabel="Refresh"
+            className="items-center justify-center rounded-full bg-surface"
+            style={{ width: 44, height: 44 }}
+          >
+            <Icon name="refresh" size={20} color={colors.ink2} strokeWidth={1.8} />
+          </Pressable>
+        </View>
+
+        {/* search (read-only placeholder, like the prototype) */}
+        <View
+          className="mb-3 flex-row items-center rounded-control bg-surface px-3.5"
+          style={{ gap: 9, paddingVertical: 11 }}
+        >
+          <Icon name="search" size={16} color={colors.ink4} />
+          <TextInput
+            placeholder="Search messages"
+            placeholderTextColor={colors.ink4}
+            editable={false}
+            className="flex-1 text-body text-ink"
+            style={{ fontFamily: "Inter_400Regular", padding: 0 }}
+          />
+        </View>
+
+        {/* filter chips */}
+        <View className="flex-row" style={{ gap: 8 }}>
+          {FILTERS.map((f) => {
+            const on = filter === f.key;
+            return (
+              <Pressable
+                key={f.key}
+                onPress={() => setFilter(f.key)}
+                accessibilityRole="button"
+                accessibilityState={on ? { selected: true } : {}}
+                className={`rounded-pill border px-4 ${on ? "border-ink bg-ink" : "border-line-2 bg-surface"}`}
+                style={{ paddingVertical: 8, minHeight: 36 }}
+              >
+                <Text
+                  className={on ? "text-white" : "text-ink-2"}
+                  style={{ fontSize: 13.5, fontFamily: "Inter_500Medium" }}
+                >
+                  {f.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
-    </Screen>
+
+      {/* list (virtualized) */}
+      {loading ? (
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator color={colors.ink4} />
+        </View>
+      ) : list.length === 0 ? (
+        <View className="flex-1 items-center justify-center" style={{ gap: 11, padding: 30 }}>
+          <Icon name="checkCircle" size={28} color={colors.ok} />
+          <Text variant="body" className="text-ink-3">Nothing here.</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={list}
+          keyExtractor={(i) => i.id}
+          className="bg-surface"
+          contentContainerStyle={{ paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 12 }}
+          renderItem={({ item, index }) => (
+            <InboxRow
+              item={item}
+              onOpen={() => openThread(item)}
+              onRead={() => markRead(item)}
+              onArchive={() => archive(item)}
+              showDivider={index < list.length - 1}
+            />
+          )}
+        />
+      )}
+    </View>
   );
 }

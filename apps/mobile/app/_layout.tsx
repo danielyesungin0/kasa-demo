@@ -49,8 +49,8 @@ export default function RootLayout() {
           }}
         >
           <Stack.Screen name="(tabs)" />
-          {/* Pushed screens (thread, profile, settings) added with the
-              conversation core / later steps. */}
+          <Stack.Screen name="thread/[id]" />
+          {/* profile, settings added in later steps. */}
         </Stack>
       </SafeAreaProvider>
     </GestureHandlerRootView>
