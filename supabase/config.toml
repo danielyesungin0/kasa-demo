@@ -1,0 +1,8 @@
+# Supabase project config. Generated for Phase 2 Edge Functions.
+project_id = "cridgriesmapykmeqmuo"
+
+# parse-intent is called server-to-server (by channel webhooks, and by you for
+# tuning). It does not require an end-user JWT. It still needs its own secrets
+# (ANTHROPIC_API_KEY) set via `supabase secrets set`.
+[functions.parse-intent]
+verify_jwt = false
