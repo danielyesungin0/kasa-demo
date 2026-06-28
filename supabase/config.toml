@@ -12,3 +12,9 @@ verify_jwt = false
 # user session (it returns only the stylist's own availability, no secrets).
 [functions.square-availability]
 verify_jwt = false
+
+# square-create-booking: the ONLY Square write path. Requires an authenticated
+# stylist session — never callable anonymously. Needs ENCRYPTION_KEY +
+# SQUARE_* secrets set before deploy. Deploy only after the sandbox is linked.
+[functions.square-create-booking]
+verify_jwt = true
