@@ -1,0 +1,25 @@
+// Single Expo config. Static app settings + dynamic `extra` injecting the
+// Supabase URL + anon key (public, safe on a client) from EXPO_PUBLIC_* env,
+// read by lib/supabase.ts. Real values live in apps/mobile/.env (gitignored);
+// names are documented at the repo-root .env.example.
+import type { ExpoConfig } from "expo/config";
+
+const config: ExpoConfig = {
+  name: "Kasa",
+  slug: "kasa",
+  scheme: "kasa",
+  version: "0.1.0",
+  orientation: "portrait",
+  userInterfaceStyle: "light",
+  ios: { supportsTablet: false, bundleIdentifier: "com.kasa.app" },
+  android: { package: "com.kasa.app" },
+  web: { bundler: "metro", output: "single" },
+  plugins: ["expo-router", "expo-font"],
+  experiments: { typedRoutes: true },
+  extra: {
+    supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? "",
+    supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "",
+  },
+};
+
+export default config;
