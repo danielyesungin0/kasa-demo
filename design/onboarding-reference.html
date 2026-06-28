@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kasa — Onboarding & Connect Accounts (prototype)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F4F0E9; --surface:#FFFFFF; --surface-2:#FAF7F1; --bg-warm:#ECE6DB;
+  --ink:#211D18; --ink-2:#534B41; --ink-3:#746A5C; --ink-4:#9A9082;
+  --line:#E9E2D6; --line-2:#DED6C7;
+  --accent:#C56B5C; --accent-strong:#A94B3E; --accent-soft:#F5E3DD; --accent-ink:#9A4A3D;
+  --plum:#7E6488; --plum-strong:#6A5074; --plum-soft:#ECE3EE; --plum-ink:#5F4868;
+  --ok:#5E9B73; --ok-soft:#E2EFE6; --ok-ink:#3C6F50;
+  --warn:#B98A3C; --warn-soft:#F4EAD6; --warn-ink:#85601F;
+  --err:#C2554E; --err-soft:#F5E1DF; --err-ink:#8F3832;
+  --ig:#C2548A; --ig-soft:#F6E5EE;
+  --wechat:#1FA855; --wechat-soft:#E1F0E7;
+  --sms:#4F86C6; --sms-soft:#E3EAF2;
+  --kakao:#F4C300; --kakao-soft:#FBF2C9; --kakao-ink:#3A2E00;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#E6DFD2;color:var(--ink);
+  display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;gap:28px;flex-wrap:wrap}
+.frame{width:390px;height:800px;background:var(--bg);border-radius:44px;box-shadow:0 2px 4px rgba(40,30,20,.08),0 24px 60px rgba(40,30,20,.28);
+  position:relative;overflow:hidden;border:1px solid #d8cfbe}
+.statusbar{height:50px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 26px 6px;font-size:14px;font-weight:600;color:var(--ink-2)}
+.statusbar .dots{display:flex;gap:5px;align-items:center}
+.screen{position:absolute;inset:50px 0 0 0;display:flex;flex-direction:column;overflow-y:auto;scrollbar-width:none}
+.screen::-webkit-scrollbar{display:none}
+.pad{padding:0 20px}
+.fr{font-family:'Fraunces',Georgia,serif}
+.eyebrow{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-4)}
+.h1{font-family:'Fraunces',Georgia,serif;font-size:30px;font-weight:600;letter-spacing:-.01em;line-height:1.12;color:var(--ink)}
+.sub{font-size:14.5px;line-height:1.5;color:var(--ink-3)}
+.btn{height:52px;border-radius:14px;border:none;font-family:inherit;font-size:15.5px;font-weight:600;width:100%;
+  display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;transition:transform .08s,opacity .15s}
+.btn:active{transform:scale(.985)}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.btn-primary{background:var(--accent-strong);color:#fff}
+.btn-plum{background:var(--plum-strong);color:#fff}
+.btn-dark{background:var(--ink);color:#fff}
+.btn-ghost{background:var(--bg-warm);color:var(--ink)}
+.btn-white{background:var(--surface);color:var(--ink);border:1px solid var(--line-2)}
+.field{height:52px;border-radius:13px;border:1px solid var(--line-2);background:var(--surface);width:100%;
+  padding:0 16px;font-size:15px;font-family:inherit;color:var(--ink);margin-top:9px}
+.field:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.field::placeholder{color:var(--ink-4)}
+label.lbl{font-size:12.5px;font-weight:600;color:var(--ink-2);display:block;margin-top:16px}
+.divider{display:flex;align-items:center;gap:12px;margin:20px 0;color:var(--ink-4);font-size:12px;font-weight:600}
+.divider::before,.divider::after{content:'';height:1px;background:var(--line-2);flex:1}
+.glyph{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex-shrink:0}
+.logo-wrap{display:flex;flex-direction:column;align-items:center;gap:14px;margin-top:34px}
+.logo{width:62px;height:62px;border-radius:20px;background:linear-gradient(150deg,var(--accent),var(--accent-strong));
+  display:flex;align-items:center;justify-content:center;box-shadow:0 8px 20px rgba(169,75,62,.32)}
+.logo span{font-family:'Fraunces',serif;color:#fff;font-size:34px;font-weight:600;line-height:1}
+.link{color:var(--accent-ink);font-weight:600;font-size:13.5px;cursor:pointer;text-decoration:none}
+.link:active{opacity:.7}
+/* connect rows */
+.prog{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px 16px;margin-top:4px;display:flex;align-items:center;gap:12px}
+.prog-track{flex:1;height:7px;background:var(--bg-warm);border-radius:99px;overflow:hidden}
+.prog-fill{height:100%;background:var(--plum);border-radius:99px;transition:width .4s ease}
+.section-h{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-4);margin:22px 4px 10px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.row{display:flex;align-items:center;gap:13px;padding:15px 16px;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:none}
+.row .avatar{width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.row .rmid{flex:1;min-width:0}
+.row .rname{font-size:15px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:7px}
+.row .rsub{font-size:12.5px;color:var(--ink-3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill{font-size:11px;font-weight:700;padding:5px 10px;border-radius:99px;white-space:nowrap}
+.pill.req{background:var(--plum-soft);color:var(--plum-ink)}
+.pill.ok{background:var(--ok-soft);color:var(--ok-ink)}
+.pill.soon{background:var(--bg-warm);color:var(--ink-4)}
+.cbtn{height:36px;padding:0 15px;border-radius:10px;border:none;font-family:inherit;font-size:13.5px;font-weight:600;cursor:pointer;background:var(--ink);color:#fff;display:flex;align-items:center;gap:7px}
+.cbtn.connecting{background:var(--bg-warm);color:var(--ink-3)}
+.cbtn:active{transform:scale(.97)}
+.spin{width:13px;height:13px;border:2px solid var(--ink-4);border-top-color:transparent;border-radius:50%;animation:sp .7s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.check{width:20px;height:20px;border-radius:50%;background:var(--ok);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.note{font-size:12.5px;color:var(--ink-3);line-height:1.5;background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:12px 13px;display:flex;gap:9px;margin-top:14px}
+.note .i{width:18px;height:18px;border-radius:50%;background:var(--warn-soft);color:var(--warn-ink);font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+/* sheet */
+.scrim{position:absolute;inset:0;background:rgba(33,29,24,.42);opacity:0;pointer-events:none;transition:opacity .25s;z-index:20}
+.scrim.on{opacity:1;pointer-events:auto}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--surface);border-radius:26px 26px 0 0;z-index:21;
+  transform:translateY(102%);transition:transform .3s cubic-bezier(.32,.72,0,1);max-height:86%;display:flex;flex-direction:column;
+  box-shadow:0 -8px 40px rgba(33,29,24,.2)}
+.sheet.on{transform:translateY(0)}
+.grip{width:38px;height:5px;border-radius:99px;background:var(--line-2);margin:10px auto 4px}
+.sheet-body{padding:8px 22px 26px;overflow-y:auto;scrollbar-width:none}
+.sheet-body::-webkit-scrollbar{display:none}
+.sheet-title{font-family:'Fraunces',serif;font-size:23px;font-weight:600;color:var(--ink);margin-top:6px}
+.req-item{display:flex;align-items:flex-start;gap:11px;padding:13px 0;border-bottom:1px solid var(--line)}
+.req-item:last-child{border-bottom:none}
+.req-dot{width:22px;height:22px;border-radius:50%;border:2px solid var(--ok);color:var(--ok);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;margin-top:1px}
+.req-tx{font-size:14px;color:var(--ink-2);line-height:1.45}
+.req-tx b{color:var(--ink);font-weight:600}
+/* faux external oauth */
+.ext{background:#fff;border:1px solid var(--line-2);border-radius:16px;padding:16px;margin-top:6px}
+.ext-bar{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-3);font-weight:600;padding-bottom:12px;border-bottom:1px solid var(--line);margin-bottom:14px}
+.lock{width:11px;height:11px;border:1.6px solid var(--ink-4);border-radius:3px;position:relative}
+.acct{display:flex;align-items:center;gap:11px;padding:12px;border:1px solid var(--line-2);border-radius:12px;margin-top:9px;cursor:pointer;background:var(--surface)}
+.acct:active{background:var(--surface-2)}
+.qr{width:158px;height:158px;border-radius:16px;margin:14px auto;background:
+  linear-gradient(45deg,var(--ink) 25%,transparent 25%,transparent 75%,var(--ink) 75%) 0 0/22px 22px,
+  linear-gradient(45deg,var(--ink) 25%,transparent 25%,transparent 75%,var(--ink) 75%) 11px 11px/22px 22px,
+  var(--surface);border:6px solid var(--surface);box-shadow:0 0 0 1px var(--line-2);position:relative}
+.qr::after{content:'';position:absolute;inset:38%;background:var(--wechat);border-radius:6px}
+.ready-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 30px}
+.ready-check{width:84px;height:84px;border-radius:50%;background:var(--ok-soft);display:flex;align-items:center;justify-content:center;margin-bottom:8px}
+.foot{padding:14px 20px 22px;background:linear-gradient(180deg,transparent,var(--bg) 30%)}
+.helper{font-size:12.5px;color:var(--ink-4);text-align:center;margin-top:11px;line-height:1.4}
+.cap{position:absolute;top:-22px;left:0;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#8a7f6d}
+</style>
+</head>
+<body>
+<div style="position:relative">
+  <div class="cap" id="cap">Sign in</div>
+  <div class="frame">
+    <div class="statusbar"><span id="clock">9:41</span><span class="dots">●●● ▮▮ 100</span></div>
+    <div class="screen" id="screen"></div>
+    <div class="scrim" id="scrim" onclick="closeSheet()"></div>
+    <div class="sheet" id="sheet"><div class="grip"></div><div class="sheet-body" id="sheetBody"></div></div>
+  </div>
+</div>
+
+<script>
+const P = {
+  square:{name:'Square', sub:'Your calendar & bookings', kind:'booking', tint:'var(--plum-soft)', dot:'var(--plum)', glyph:'◧', required:true},
+  instagram:{name:'Instagram', sub:'Client DMs', kind:'channel', tint:'var(--ig-soft)', dot:'var(--ig)', glyph:'◉'},
+  wechat:{name:'WeChat', sub:'Client messages', kind:'channel', tint:'var(--wechat-soft)', dot:'var(--wechat)', glyph:'❝'},
+};
+const LATER = {
+  sms:{name:'SMS', sub:'Text messages', tint:'var(--sms-soft)', dot:'var(--sms)', glyph:'✉'},
+  kakao:{name:'KakaoTalk', sub:'Client messages', tint:'var(--kakao-soft)', dot:'var(--kakao)', glyph:'＠', ink:'var(--kakao-ink)'},
+};
+let S = { screen:'auth', authMode:'signin', conn:{square:'idle',instagram:'idle',wechat:'idle'}, sheet:null, step:0 };
+
+const el = id => document.getElementById(id);
+const caps = {auth:'Sign in', connect:'Connect accounts', ready:'All set'};
+
+function render(){
+  el('cap').textContent = caps[S.screen];
+  if(S.screen==='auth') renderAuth();
+  else if(S.screen==='connect') renderConnect();
+  else renderReady();
+}
+
+function renderAuth(){
+  const signup = S.authMode==='signup';
+  el('screen').innerHTML = `
+   <div class="logo-wrap">
+     <div class="logo"><span>K</span></div>
+     <div style="text-align:center">
+       <div class="h1">${signup?'Create your Kasa':'Welcome back'}</div>
+       <div class="sub" style="margin-top:6px;max-width:280px">One calm inbox for every client message — and your books.</div>
+     </div>
+   </div>
+   <div class="pad" style="margin-top:26px">
+     <label class="lbl">Email</label>
+     <input class="field" type="email" placeholder="shen@studio.com" autocomplete="email">
+     <label class="lbl">Password</label>
+     <input class="field" type="password" placeholder="••••••••" autocomplete="current-password">
+     <button class="btn btn-primary" style="margin-top:20px" onclick="goConnect()">${signup?'Create account':'Sign in'}</button>
+     <div class="divider">OR</div>
+     <button class="btn btn-white" style="margin-bottom:11px" onclick="goConnect()">
+       <span class="glyph" style="background:#fff;border:1px solid var(--line-2);color:#4285F4">G</span> Continue with Google</button>
+     <button class="btn btn-dark" onclick="goConnect()">
+       <span style="font-size:17px">apple</span>&nbsp;Continue with Apple</button>
+     <div style="text-align:center;margin-top:22px">
+       <span class="sub" style="font-size:13px">${signup?'Already have an account?':"New to Kasa?"} </span>
+       <span class="link" onclick="toggleMode()">${signup?'Sign in':'Create one'}</span>
+     </div>
+     <div class="helper" style="margin-top:18px">Sign-in is handled by Supabase Auth.<br>Connecting Instagram / WeChat / Square comes next — that's separate from logging in.</div>
+   </div>`;
+}
+
+function connRow(id){
+  const p = P[id], st = S.conn[id];
+  let right;
+  if(st==='connected') right = `<span class="pill ok">Connected</span>`;
+  else if(st==='connecting') right = `<button class="cbtn connecting"><span class="spin"></span>…</button>`;
+  else right = `<button class="cbtn" onclick="openSheet('${id}')">Connect</button>`;
+  const sub = st==='connected' ? connectedLabel(id) : p.sub;
+  return `<div class="row">
+    <div class="avatar" style="background:${p.tint};color:${p.dot};font-size:18px">${p.glyph}</div>
+    <div class="rmid">
+      <div class="rname">${p.name} ${p.required?'<span class="pill req">Required</span>':''}</div>
+      <div class="rsub">${sub}</div>
+    </div>${right}</div>`;
+}
+function connectedLabel(id){
+  return {square:'Sandbox · Shen’s Studio', instagram:'@shen.hair · pro account', wechat:'Shen Hair Studio 公众号'}[id];
+}
+function laterRow(id){
+  const p = LATER[id];
+  return `<div class="row" style="opacity:.62">
+    <div class="avatar" style="background:${p.tint};color:${p.ink||p.dot};font-size:17px">${p.glyph}</div>
+    <div class="rmid"><div class="rname">${p.name}</div><div class="rsub">${p.sub}</div></div>
+    <span class="pill soon">After launch</span></div>`;
+}
+
+function renderConnect(){
+  const channels = ['instagram','wechat'].filter(c=>S.conn[c]==='connected').length;
+  const sq = S.conn.square==='connected';
+  const ready = sq && channels>=1;
+  const done = (sq?1:0)+channels, total = 3;
+  el('screen').innerHTML = `
+   <div class="pad" style="padding-top:14px">
+     <div class="eyebrow">Step 2 of 2</div>
+     <div class="h1" style="margin-top:8px">Connect your accounts</div>
+     <div class="sub" style="margin-top:7px">Kasa needs your booking calendar and at least one message channel to get going.</div>
+     <div class="prog" style="margin-top:18px">
+       <div class="prog-track"><div class="prog-fill" style="width:${(done/total)*100}%"></div></div>
+       <span style="font-size:12.5px;font-weight:700;color:var(--ink-2)">${done}/${total}</span>
+     </div>
+     <div class="section-h">Booking</div>
+     <div class="card">${connRow('square')}</div>
+     <div class="section-h">Message channels · MVP</div>
+     <div class="card">${connRow('instagram')}${connRow('wechat')}</div>
+     <div class="section-h">More channels</div>
+     <div class="card">${laterRow('sms')}${laterRow('kakao')}</div>
+     <div style="height:130px"></div>
+   </div>
+   <div class="foot" style="position:absolute;bottom:0;left:0;right:0">
+     <button class="btn ${ready?'btn-plum':'btn-ghost'}" ${ready?'':'disabled'} onclick="S.screen='ready';render()">
+       ${ready?'Enter Kasa →':'Connect Square + 1 channel'}</button>
+     ${ready?'<div class="helper">You can add more channels later in Settings.</div>'
+            :'<div class="helper">Instagram needs a Professional account; WeChat needs a verified Service Account.</div>'}
+   </div>`;
+}
+
+function renderReady(){
+  el('screen').innerHTML = `
+   <div class="ready-wrap">
+     <div class="ready-check"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></div>
+     <div class="h1" style="margin-top:14px">You’re all set</div>
+     <div class="sub" style="margin-top:10px">Square and your channels are linked. New client messages will land in your inbox.</div>
+     <div class="card" style="width:100%;margin-top:24px;text-align:left">
+       ${['square','instagram','wechat'].filter(id=>S.conn[id]==='connected').map(id=>`
+         <div class="row"><div class="avatar" style="background:${P[id].tint};color:${P[id].dot};font-size:17px">${P[id].glyph}</div>
+         <div class="rmid"><div class="rname">${P[id].name}</div><div class="rsub">${connectedLabel(id)}</div></div>
+         <span class="check"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span></div>`).join('')}
+     </div>
+   </div>
+   <div class="foot"><button class="btn btn-primary" onclick="reset()">Open inbox</button></div>`;
+}
+
+/* ---------- sheets (the realistic per-platform flows) ---------- */
+function openSheet(id){ S.sheet=id; S.step=0; el('scrim').classList.add('on'); el('sheet').classList.add('on'); renderSheet(); }
+function closeSheet(){ el('scrim').classList.remove('on'); el('sheet').classList.remove('on'); S.sheet=null; }
+function nextStep(){ S.step++; renderSheet(); }
+function connectNow(id){
+  S.conn[id]='connecting'; renderSheet(); closeSheet(); render();
+  setTimeout(()=>{ S.conn[id]='connected'; render(); }, 1400);
+}
+function renderSheet(){
+  const id=S.sheet; if(!id) return;
+  el('sheetBody').innerHTML = ({square:sqSheet, instagram:igSheet, wechat:wxSheet})[id]();
+}
+
+function sqSheet(){
+  if(S.step===0) return `
+    <div class="sheet-title">Connect Square</div>
+    <div class="sub" style="margin-top:8px">Kasa books appointments into your Square calendar and reads your services. We use <b style="color:var(--ink)">Square sandbox</b> during setup — no real bookings yet.</div>
+    <div class="req-item"><span class="req-dot">✓</span><span class="req-tx"><b>Square account</b> — free to create at squareup.com</span></div>
+    <div class="req-item"><span class="req-dot">✓</span><span class="req-tx">Kasa requests <b>Bookings</b> + <b>Catalog</b> access only</span></div>
+    <button class="btn btn-plum" style="margin-top:20px" onclick="nextStep()">Continue to Square</button>`;
+  // faux OAuth authorize
+  return `
+    <div class="sheet-title">Authorize Kasa</div>
+    <div class="ext">
+      <div class="ext-bar"><span class="lock"></span> connect.squareup.com</div>
+      <div style="font-size:14px;color:var(--ink-2);line-height:1.5"><b style="color:var(--ink)">Kasa</b> is requesting access to your Square account:</div>
+      <div style="margin-top:12px;font-size:13px;color:var(--ink-3)">• View &amp; manage bookings<br>• Read your service catalog<br>• Read your locations</div>
+      <button class="btn btn-dark" style="margin-top:18px" onclick="connectNow('square')">Allow</button>
+      <div style="text-align:center;margin-top:10px"><span class="link" onclick="closeSheet()">Cancel</span></div>
+    </div>
+    <div class="helper" style="margin-top:14px">This is the real Square OAuth screen in production.</div>`;
+}
+
+function igSheet(){
+  if(S.step===0) return `
+    <div class="sheet-title">Connect Instagram</div>
+    <div class="sub" style="margin-top:8px">Kasa reads and sends your Instagram DMs through Meta’s official API. A couple of one-time requirements:</div>
+    <div class="req-item"><span class="req-dot">✓</span><span class="req-tx"><b>Instagram Professional account</b> (Business or Creator)</span></div>
+    <div class="req-item"><span class="req-dot">✓</span><span class="req-tx">Linked to a <b>Facebook Page</b></span></div>
+    <div class="note"><span class="i">!</span><span>You can only reply within <b>24 hours</b> of a client’s last message — Meta’s rule, shown clearly in each thread.</span></div>
+    <button class="btn btn-primary" style="margin-top:18px" onclick="nextStep()">Continue with Facebook</button>
+    <div style="text-align:center;margin-top:13px"><span class="link" onclick="S.step=99;renderSheet()">I don’t have a Professional account</span></div>`;
+  if(S.step===99) return `
+    <div class="sheet-title">Switch to Professional</div>
+    <div class="sub" style="margin-top:8px">It’s free and takes a minute, inside Instagram:</div>
+    <div class="req-item"><span class="req-dot" style="border-color:var(--ink-4);color:var(--ink-4)">1</span><span class="req-tx">Instagram → <b>Settings</b> → Account type → <b>Switch to Professional</b></span></div>
+    <div class="req-item"><span class="req-dot" style="border-color:var(--ink-4);color:var(--ink-4)">2</span><span class="req-tx">Choose <b>Business</b> (or Creator)</span></div>
+    <div class="req-item"><span class="req-dot" style="border-color:var(--ink-4);color:var(--ink-4)">3</span><span class="req-tx">Connect it to your <b>Facebook Page</b> (create one if needed)</span></div>
+    <button class="btn btn-ghost" style="margin-top:18px" onclick="S.step=0;renderSheet()">← Back</button>`;
+  // faux FB account chooser
+  return `
+    <div class="sheet-title">Choose account</div>
+    <div class="ext">
+      <div class="ext-bar"><span class="lock"></span> facebook.com</div>
+      <div style="font-size:13.5px;color:var(--ink-2)"><b style="color:var(--ink)">Kasa</b> wants to manage messages for:</div>
+      <div class="acct" onclick="connectNow('instagram')">
+        <div class="avatar" style="width:38px;height:38px;background:var(--ig-soft);color:var(--ig);font-size:16px">◉</div>
+        <div class="rmid"><div class="rname" style="font-size:14px">@shen.hair</div><div class="rsub">Shen’s Studio · Page linked</div></div>
+        <span style="color:var(--ink-4)">›</span>
+      </div>
+      <div style="text-align:center;margin-top:14px"><span class="link" onclick="closeSheet()">Cancel</span></div>
+    </div>
+    <div class="helper" style="margin-top:14px">In production this is Meta’s real permission screen. Your Kasa app must pass <b>Meta App Review</b> for messaging first.</div>`;
+}
+
+function wxSheet(){
+  if(S.step===0) return `
+    <div class="sheet-title">Connect WeChat</div>
+    <div class="sub" style="margin-top:8px">Kasa connects to your WeChat <b style="color:var(--ink)">Official Account</b> to read and reply to client messages.</div>
+    <div class="req-item"><span class="req-dot">✓</span><span class="req-tx"><b>Service Account</b> type (not Subscription)</span></div>
+    <div class="req-item"><span class="req-dot">✓</span><span class="req-tx"><b>Verified</b> — clients must message you first</span></div>
+    <div class="note"><span class="i">!</span><span>Reply window is <b>48 hours</b> from the client’s last message.</span></div>
+    <button class="btn" style="margin-top:18px;background:var(--wechat);color:#fff" onclick="nextStep()">Authorize with WeChat</button>
+    <div style="text-align:center;margin-top:13px"><span class="link" onclick="S.step=99;renderSheet()">I don’t have a Service Account</span></div>`;
+  if(S.step===99) return `
+    <div class="sheet-title">Getting a Service Account</div>
+    <div class="sub" style="margin-top:8px">This one’s heavier — especially outside mainland China:</div>
+    <div class="req-item"><span class="req-dot" style="border-color:var(--ink-4);color:var(--ink-4)">1</span><span class="req-tx">Register an <b>Official Account</b> at the WeChat platform (Service Account)</span></div>
+    <div class="req-item"><span class="req-dot" style="border-color:var(--ink-4);color:var(--ink-4)">2</span><span class="req-tx">Complete <b>business verification</b> (documents + annual fee)</span></div>
+    <div class="req-item"><span class="req-dot" style="border-color:var(--ink-4);color:var(--ink-4)">3</span><span class="req-tx">Come back and authorize Kasa</span></div>
+    <div class="helper" style="margin-top:14px;text-align:left">Plan for this to take time — it’s the slow part of WeChat onboarding.</div>
+    <button class="btn btn-ghost" style="margin-top:14px" onclick="S.step=0;renderSheet()">← Back</button>`;
+  // QR authorize (WeChat is QR-based)
+  return `
+    <div class="sheet-title">Scan to authorize</div>
+    <div class="sub" style="margin-top:8px">Open WeChat on the phone with your Official Account and scan:</div>
+    <div class="qr"></div>
+    <button class="btn" style="background:var(--wechat);color:#fff" onclick="connectNow('wechat')">I’ve scanned &amp; authorized</button>
+    <div style="text-align:center;margin-top:10px"><span class="link" onclick="closeSheet()">Cancel</span></div>`;
+}
+
+function toggleMode(){ S.authMode = S.authMode==='signin'?'signup':'signin'; render(); }
+function goConnect(){ S.screen='connect'; render(); }
+function reset(){ S = {screen:'auth',authMode:'signin',conn:{square:'idle',instagram:'idle',wechat:'idle'},sheet:null,step:0}; render(); }
+
+render();
+// live clock for realism
+setInterval(()=>{const d=new Date();el('clock').textContent=d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}).replace(/\s?[AP]M/,'');},1000);
+</script>
+</body>
+</html>
