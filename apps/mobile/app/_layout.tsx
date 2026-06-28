@@ -87,6 +87,7 @@ export default function RootLayout() {
               <Stack.Screen name="(tabs)" />
               <Stack.Screen name="thread/[id]" />
               <Stack.Screen name="client/[id]" />
+              <Stack.Screen name="settings/channels" />
               <Stack.Screen name="book" options={{ presentation: "modal" }} />
             </Stack>
           </Guard>
