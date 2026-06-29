@@ -4,7 +4,7 @@
 // Account" (WeChat). The actual external OAuth/QR is a TODO(oauth) seam; the
 // final "Allow / I've authorized" button calls the seed-connect action.
 import { useState } from "react";
-import { View, Pressable, Modal } from "react-native";
+import { View, Pressable, Modal, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
@@ -67,19 +67,34 @@ export function ConnectSheet({
   }
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={close}>
-      <Pressable className="flex-1 bg-black/40" onPress={close} />
-      <View
-        className="rounded-t-sheet bg-surface"
-        style={{ paddingBottom: insets.bottom + 16, maxHeight: "86%" }}
-      >
-        <View className="items-center pt-2.5 pb-1">
-          <View className="rounded-full bg-line-2" style={{ width: 38, height: 5 }} />
-        </View>
-        <View className="px-6 pt-2">
-          {provider === "square" && <SquareBody step={step} setStep={setStep} finish={finish} close={close} />}
-          {provider === "instagram" && <IGBody step={step} setStep={setStep} finish={finish} close={close} />}
-          {provider === "wechat" && <WeChatBody step={step} setStep={setStep} finish={finish} close={close} />}
+    <Modal visible transparent animationType="slide" onRequestClose={close} statusBarTranslucent>
+      {/* Full-screen layer: scrim fills it, sheet pinned to the bottom. The
+          scrim is a background sibling (not a flex child that pushes the sheet),
+          so the whole layer slides as one bottom sheet rather than the scrim
+          floating above it. */}
+      <View style={{ flex: 1, justifyContent: "flex-end" }}>
+        <Pressable
+          style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.4)" }}
+          onPress={close}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss"
+        />
+        <View
+          className="rounded-t-sheet bg-surface"
+          style={{ paddingBottom: insets.bottom + 16, maxHeight: "88%" }}
+        >
+          <View className="items-center pt-2.5 pb-1">
+            <View className="rounded-full bg-line-2" style={{ width: 38, height: 5 }} />
+          </View>
+          <ScrollView
+            contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: 8 }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {provider === "square" && <SquareBody step={step} setStep={setStep} finish={finish} close={close} />}
+            {provider === "instagram" && <IGBody step={step} setStep={setStep} finish={finish} close={close} />}
+            {provider === "wechat" && <WeChatBody step={step} setStep={setStep} finish={finish} close={close} />}
+          </ScrollView>
         </View>
       </View>
     </Modal>
