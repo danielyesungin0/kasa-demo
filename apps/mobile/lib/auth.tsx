@@ -106,8 +106,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   // Apple via expo-apple-authentication (native) → Supabase signInWithIdToken.
-  // The native credential request works now; exchanging it needs the Supabase
-  // Apple provider enabled — TODO(oauth). Honest error until then.
+  // The native credential request works on the paid team; exchanging the
+  // identity token needs the Supabase Apple provider enabled (dashboard). If
+  // it's not enabled yet, Supabase returns a clear provider error (no fake
+  // success).
   async function signInWithApple(): Promise<AuthResult> {
     try {
       const credential = await AppleAuthentication.signInAsync({
@@ -117,9 +119,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ],
       });
       if (!credential.identityToken) return { error: "No Apple identity token." };
-      // TODO(oauth): supabase.auth.signInWithIdToken({ provider: 'apple',
-      // token: credential.identityToken }) once the Apple provider is enabled.
-      return { error: "Apple sign-in isn't configured yet (Phase 4)." };
+      const { error } = await supabase.auth.signInWithIdToken({
+        provider: "apple",
+        token: credential.identityToken,
+      });
+      return { error: error?.message ?? null };
     } catch (e: any) {
       if (e?.code === "ERR_REQUEST_CANCELED") return { error: null };
       return { error: e?.message ?? "Apple sign-in failed." };

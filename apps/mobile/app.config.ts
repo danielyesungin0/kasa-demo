@@ -3,18 +3,11 @@
 // read by lib/supabase.ts. Real values live in apps/mobile/.env (gitignored);
 // names are documented at the repo-root .env.example.
 import type { ExpoConfig } from "expo/config";
-import { withEntitlementsPlist, type ConfigPlugin } from "expo/config-plugins";
 
-// expo-apple-authentication auto-injects the "Sign In with Apple" entitlement,
-// which FREE (Personal) Apple dev teams can't provision — it blocks device dev
-// builds. We're not using Apple auth yet (it's a Phase-4 stub), so strip the
-// entitlement during prebuild. Survives ios/ regeneration. When Apple Sign-In
-// goes live on a paid team, remove this plugin.
-const stripAppleSignIn: ConfigPlugin = (cfg) =>
-  withEntitlementsPlist(cfg, (c) => {
-    delete c.modResults["com.apple.developer.applesignin"];
-    return c;
-  });
+// Apple Sign-In entitlement (from expo-apple-authentication) is left in place —
+// the paid Apple Developer team (JFKTQFD4M3) can provision it. (Previously
+// stripped because free Personal teams can't; that plugin was removed once the
+// account went paid.)
 
 const baseConfig: ExpoConfig = {
   name: "Kasa",
@@ -34,4 +27,4 @@ const baseConfig: ExpoConfig = {
   },
 };
 
-export default stripAppleSignIn(baseConfig);
+export default baseConfig;
