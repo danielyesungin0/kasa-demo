@@ -122,17 +122,16 @@ export function useChannels(): ChannelsData {
         });
       });
 
-      // openBrowserAsync resolves when the user closes the tab; the deep link
-      // resolves on a successful callback; a short timeout guarantees we never
-      // hang in a permanent loading state (Square sandbox OAuth often can't
-      // complete in-app — see square-sandbox-setup memory).
-      const browser = WebBrowser.openBrowserAsync(json.authorize_url, { showInRecents: true });
+      // openAuthSessionAsync ties the browser lifecycle to the kasa:// redirect
+      // and closes itself — so there's no manual dismiss to crash on. Falls back
+      // to the deep-link race + a timeout so we never hang on the connecting
+      // state (Square SANDBOX OAuth can't always complete in-app; production is
+      // fine — see square-sandbox-setup memory).
       await Promise.race([
+        WebBrowser.openAuthSessionAsync(json.authorize_url, "kasa://square-connected"),
         returned,
-        browser,
-        new Promise<string>((r) => { timer = setTimeout(() => r(""), 45_000); }),
+        new Promise<string>((r) => { timer = setTimeout(() => r(""), 60_000); }),
       ]);
-      WebBrowser.dismissBrowser();
       await refresh(); // re-read truth; idle stays idle if it didn't connect
     } catch {
       setState("square", { state: "idle" });
