@@ -146,6 +146,28 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "square_not_ready" }, 502);
   }
 
+  // Square's CreateBooking requires the service variation's CURRENT catalog
+  // version in the appointment segment. Fetch it (cheap, one GET). Without it
+  // Square rejects the booking ("service_variation_version" required / stale).
+  let serviceVariationVersion: number | undefined;
+  try {
+    const catRes = await fetch(
+      `${SQUARE_BASE}/v2/catalog/object/${serviceVariationId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Square-Version": SQUARE_VERSION,
+        },
+      },
+    );
+    if (catRes.ok) {
+      const catData = await catRes.json();
+      serviceVariationVersion = catData.object?.version;
+    }
+  } catch {
+    // non-fatal; we still try the booking (Square may infer the latest)
+  }
+
   // ── 1) Square FIRST. Deterministic idempotency keys dedupe retries. ──
   let squareBookingId: string;
   try {
@@ -181,6 +203,7 @@ Deno.serve(async (req) => {
             {
               duration_minutes: durationMinutes,
               service_variation_id: serviceVariationId,
+              service_variation_version: serviceVariationVersion,
               team_member_id: stylist.square_team_member_id,
             },
           ],
@@ -189,9 +212,18 @@ Deno.serve(async (req) => {
     });
 
     if (!res.ok) {
-      // Status only — body can echo customer/token material.
-      console.error("[create-booking] Square CreateBooking", res.status);
-      return jsonResponse({ error: "square_booking_failed" }, 502);
+      // Capture Square's error CODE (safe — not token/customer material) so we
+      // can diagnose. The detail field can be specific; status alone hid the
+      // service_variation_version requirement before.
+      let code = "unknown";
+      try {
+        const errBody = await res.json();
+        code = errBody?.errors?.[0]?.code ?? "unknown";
+        console.error("[create-booking] Square CreateBooking", res.status, code, errBody?.errors?.[0]?.detail ?? "");
+      } catch {
+        console.error("[create-booking] Square CreateBooking", res.status);
+      }
+      return jsonResponse({ error: "square_booking_failed", square_code: code }, 502);
     }
     const data = await res.json();
     squareBookingId = data.booking?.id;
@@ -210,10 +242,21 @@ Deno.serve(async (req) => {
   let appointmentId: string | null = null;
   let mirrored = false;
   try {
-    const { data: appt, error: insertErr } = await admin
+    // Idempotent mirror without upsert: a duplicate can only happen on a retry
+    // of the SAME Square booking (deterministic idempotency key dedupes at
+    // Square), so if a row already exists for this square_booking_id, reuse it.
+    const { data: existing } = await admin
       .from("appointments")
-      .upsert(
-        {
+      .select("id")
+      .eq("square_booking_id", squareBookingId)
+      .maybeSingle();
+
+    let appt: { id: string } | null = existing as { id: string } | null;
+    let insertErr: { message: string } | null = null;
+    if (!existing) {
+      const ins = await admin
+        .from("appointments")
+        .insert({
           stylist_id: stylistId,
           client_id: body.client_id ?? null,
           service_id: body.service_id ?? null,
@@ -223,11 +266,12 @@ Deno.serve(async (req) => {
           status: "booked",
           source: "kasa",
           origin_conversation_id: body.origin_conversation_id ?? null,
-        },
-        { onConflict: "square_booking_id" }, // idempotent local mirror
-      )
-      .select("id")
-      .maybeSingle();
+        })
+        .select("id")
+        .maybeSingle();
+      appt = ins.data as { id: string } | null;
+      insertErr = ins.error;
+    }
     if (insertErr) {
       console.error(
         "[create-booking] appointments mirror failed (Square booking stands):",
