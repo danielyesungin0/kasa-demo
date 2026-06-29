@@ -13,12 +13,13 @@ import { ConnectSheet } from "./ConnectSheet";
 import { useChannels, type ConnState, type ProviderId } from "@/lib/useChannels";
 import { colors } from "@/theme/colors";
 
+// MVP connects Square + Instagram. WeChat/SMS/Kakao are post-launch.
 const PROVIDERS: { id: ProviderId; name: string; sub: string; required?: boolean; channel?: boolean }[] = [
   { id: "square", name: "Square", sub: "Your calendar & bookings", required: true },
   { id: "instagram", name: "Instagram", sub: "Client DMs", channel: true },
-  { id: "wechat", name: "WeChat", sub: "Client messages", channel: true },
 ];
 const LATER = [
+  { id: "wechat", name: "WeChat", sub: "Client messages" },
   { id: "sms", name: "SMS", sub: "Text messages" },
   { id: "kakao", name: "KakaoTalk", sub: "Client messages" },
 ] as const;
@@ -44,8 +45,7 @@ export function ChannelsScreen({
   async function onRefresh() { setRefreshing(true); await refresh(); setRefreshing(false); }
   const [sheet, setSheet] = useState<ProviderId | null>(null);
 
-  const channelsConnected =
-    (conn.instagram.state === "connected" ? 1 : 0) + (conn.wechat.state === "connected" ? 1 : 0);
+  const channelsConnected = conn.instagram.state === "connected" ? 1 : 0;
   const squareConnected = conn.square.state === "connected";
   const ready = squareConnected && channelsConnected >= 1;
   const done = (squareConnected ? 1 : 0) + channelsConnected;
@@ -128,9 +128,9 @@ export function ChannelsScreen({
             </Text>
             <View className="mt-5 flex-row items-center rounded-card border border-line bg-surface p-4" style={{ gap: 12 }}>
               <View className="h-[7px] flex-1 overflow-hidden rounded-pill bg-bg-warm">
-                <View className="h-full rounded-pill bg-plum" style={{ width: `${(done / 3) * 100}%` }} />
+                <View className="h-full rounded-pill bg-plum" style={{ width: `${(done / 2) * 100}%` }} />
               </View>
-              <Text tabular style={{ fontSize: 12.5, fontFamily: "Inter_700Bold", color: colors.ink2 }}>{done}/3</Text>
+              <Text tabular style={{ fontSize: 12.5, fontFamily: "Inter_700Bold", color: colors.ink2 }}>{done}/2</Text>
             </View>
           </>
         ) : (
@@ -142,10 +142,9 @@ export function ChannelsScreen({
           <ConnRow id="square" />
         </View>
 
-        <Text className="mt-5 mb-2.5 px-1 text-ink-4" style={{ fontSize: 12, fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>MESSAGE CHANNELS · MVP</Text>
+        <Text className="mt-5 mb-2.5 px-1 text-ink-4" style={{ fontSize: 12, fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>MESSAGE CHANNEL</Text>
         <View className="overflow-hidden rounded-card border border-line bg-surface">
           <ConnRow id="instagram" />
-          <ConnRow id="wechat" />
         </View>
 
         <Text className="mt-5 mb-2.5 px-1 text-ink-4" style={{ fontSize: 12, fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>MORE CHANNELS</Text>
@@ -176,13 +175,13 @@ export function ChannelsScreen({
             style={{ height: 52 }}
           >
             <Text style={{ fontSize: 15.5, fontFamily: "Inter_600SemiBold", color: ready ? "#fff" : colors.ink2 }}>
-              {ready ? "Enter Kasa →" : "Connect Square + 1 channel"}
+              {ready ? "Enter Kasa →" : "Connect Square + Instagram"}
             </Text>
           </Pressable>
           <Text className="mt-2.5 text-center text-ink-4" style={{ fontSize: 12.5, lineHeight: 18 }}>
             {ready
-              ? "You can add more channels later in Settings."
-              : "Instagram needs a Professional account; WeChat needs a verified Service Account."}
+              ? "More channels coming after launch."
+              : "Instagram needs a Professional account linked to a Facebook Page."}
           </Text>
         </View>
       ) : null}
