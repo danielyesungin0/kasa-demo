@@ -14,6 +14,7 @@
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { type InboundMessage, normalizeInbound } from "../_shared/inbound.ts";
+import { decryptSecret } from "../_shared/crypto.ts";
 
 // Verify the X-Hub-Signature-256: HMAC-SHA256 of the RAW body keyed by the app
 // secret, compared to "sha256=...". Instagram Business Login webhooks are signed
@@ -139,6 +140,16 @@ Deno.serve(async (req) => {
   const admin = createAdminClient();
   const messages = parseMeta(payload);
 
+  // Enrich each message with the sender's IG username (Meta's webhook only gives
+  // the IGSID). We look it up via the connected account's token so the client
+  // shows a real @handle instead of "New client". Best-effort; cached per id.
+  const handleCache = new Map<string, string | null>();
+  for (const msg of messages) {
+    if (!msg.displayHandle) {
+      msg.displayHandle = await resolveIgUsername(admin, msg.externalUserId, handleCache);
+    }
+  }
+
   // Always 200 to Meta quickly so it doesn't retry-storm; process inline for
   // now (volume is tiny). Each message goes through the shared path.
   for (const msg of messages) {
@@ -151,3 +162,38 @@ Deno.serve(async (req) => {
 
   return jsonResponse({ ok: true, received: messages.length });
 });
+
+// Look up an Instagram sender's @username from their IGSID, using the connected
+// account's stored token. Returns "@username" or null. Never logs the token.
+// deno-lint-ignore no-explicit-any
+async function resolveIgUsername(admin: any, igsid: string, cache: Map<string, string | null>): Promise<string | null> {
+  if (cache.has(igsid)) return cache.get(igsid) ?? null;
+  let handle: string | null = null;
+  try {
+    const { data: chan } = await admin
+      .from("channels")
+      .select("credentials_ref")
+      .eq("type", "instagram")
+      .eq("connected", true)
+      .maybeSingle();
+    if (chan?.credentials_ref) {
+      const creds = JSON.parse(decryptSecret(chan.credentials_ref) ?? "{}");
+      const token = creds.access_token;
+      if (token) {
+        // IG Graph: GET /{igsid}?fields=username (works for users who messaged you)
+        const res = await fetch(
+          `https://graph.instagram.com/v21.0/${igsid}?fields=username,name&access_token=${token}`,
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (data.username) handle = `@${data.username}`;
+          else if (data.name) handle = data.name;
+        }
+      }
+    }
+  } catch {
+    // best-effort — fall back to "New client"
+  }
+  cache.set(igsid, handle);
+  return handle;
+}

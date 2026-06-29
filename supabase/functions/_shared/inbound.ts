@@ -133,12 +133,16 @@ export async function normalizeInbound(
     if (ident?.client_id) {
       clientId = ident.client_id;
     } else {
+      const handle = msg.displayHandle?.trim() || null;
       const { data: newClient, error: clientErr } = await admin
         .from("clients")
         .insert({
           stylist_id: stylistId,
-          name: msg.displayHandle?.trim() || "New client",
+          name: handle || "New client",
           value: "new",
+          // Store the IG handle on the client so the profile's tappable
+          // Instagram tag works. (handle is like "@username".)
+          instagram_handle: msg.channel === "instagram" ? handle : null,
         })
         .select("id")
         .single();

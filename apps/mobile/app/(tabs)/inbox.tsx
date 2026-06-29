@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { View, FlatList, Pressable, TextInput, ActivityIndicator } from "react-native";
+import { View, FlatList, Pressable, TextInput, ActivityIndicator, RefreshControl } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Icon } from "@/components/ui/Icon";
@@ -25,6 +25,8 @@ export default function InboxScreen() {
   const { items, loading, reload } = useConversations();
   const [filter, setFilter] = useState<FilterKey>("all");
   const [query, setQuery] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  async function onRefresh() { setRefreshing(true); await reload(); setRefreshing(false); }
 
   const list = useMemo(() => {
     let l = items;
@@ -57,17 +59,8 @@ export default function InboxScreen() {
     <View className="flex-1 bg-bg" style={{ paddingTop: insets.top }}>
       {/* header */}
       <View className="px-gutter pb-2.5 pt-3">
-        <View className="mb-3 flex-row items-center justify-between" style={{ minHeight: 40 }}>
+        <View className="mb-3" style={{ minHeight: 40, justifyContent: "center" }}>
           <Text variant="title-lg">Inbox</Text>
-          <Pressable
-            onPress={reload}
-            accessibilityRole="button"
-            accessibilityLabel="Refresh"
-            className="items-center justify-center rounded-full bg-surface"
-            style={{ width: 44, height: 44 }}
-          >
-            <Icon name="refresh" size={20} color={colors.ink2} strokeWidth={1.8} />
-          </Pressable>
         </View>
 
         {/* search — filters by client name or message text */}
@@ -133,6 +126,7 @@ export default function InboxScreen() {
           keyExtractor={(i) => i.id}
           className="bg-surface"
           contentContainerStyle={{ paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 12 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.ink4} />}
           renderItem={({ item, index }) => (
             <InboxRow
               item={item}

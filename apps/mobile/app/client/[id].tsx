@@ -1,4 +1,4 @@
-import { View, Pressable, ScrollView, ActivityIndicator } from "react-native";
+import { View, Pressable, ScrollView, ActivityIndicator, Linking } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon } from "@/components/ui/Icon";
@@ -140,7 +140,14 @@ export default function ClientScreen() {
           ) : (
             <>
               {c.phone ? <Contact icon="phone" value={c.phone} /> : null}
-              {c.instagram_handle ? <Contact icon="user" value={c.instagram_handle} border={!!c.phone} /> : null}
+              {c.instagram_handle ? (
+                <Contact
+                  icon="user"
+                  value={c.instagram_handle}
+                  border={!!c.phone}
+                  onPress={() => openInstagram(c.instagram_handle!)}
+                />
+              ) : null}
               {c.email ? <Contact icon="mail" value={c.email} border={!!c.phone || !!c.instagram_handle} /> : null}
             </>
           )}
@@ -182,13 +189,30 @@ function Card({ label, body, caution }: { label: string; body: string; caution?:
   );
 }
 
-function Contact({ icon, value, border }: { icon: "phone" | "user" | "mail"; value: string; border?: boolean }) {
-  return (
-    <View className={`flex-row items-center px-4 py-3.5 ${border ? "border-t border-line" : ""}`} style={{ gap: 12, minHeight: 44 }}>
+// Open a client's Instagram profile in the IG app (web fallback).
+function openInstagram(handle: string) {
+  const u = handle.replace(/^@/, "");
+  const app = `instagram://user?username=${u}`;
+  const web = `https://instagram.com/${u}`;
+  Linking.canOpenURL(app)
+    .then((ok) => Linking.openURL(ok ? app : web))
+    .catch(() => Linking.openURL(web).catch(() => {}));
+}
+
+function Contact({ icon, value, border, onPress }: { icon: "phone" | "user" | "mail"; value: string; border?: boolean; onPress?: () => void }) {
+  const inner = (
+    <>
       <View className="items-center justify-center rounded-control bg-bg-warm" style={{ width: 34, height: 34 }}>
         <Icon name={icon} size={15} color={colors.ink2} />
       </View>
-      <Text className="text-ink" style={{ fontSize: 14.5 }}>{value}</Text>
-    </View>
+      <Text className={onPress ? "text-accent-ink" : "text-ink"} style={{ fontSize: 14.5, flex: 1 }}>{value}</Text>
+      {onPress ? <Icon name="ext" size={15} color={colors.ink4} /> : null}
+    </>
+  );
+  const cls = `flex-row items-center px-4 py-3.5 ${border ? "border-t border-line" : ""}`;
+  return onPress ? (
+    <Pressable onPress={onPress} accessibilityRole="link" className={cls} style={{ gap: 12, minHeight: 44 }}>{inner}</Pressable>
+  ) : (
+    <View className={cls} style={{ gap: 12, minHeight: 44 }}>{inner}</View>
   );
 }

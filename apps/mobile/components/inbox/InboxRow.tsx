@@ -71,25 +71,23 @@ export function InboxRow({
         accessibilityRole="button"
         accessibilityLabel={`Conversation with ${item.client.name}`}
         className="flex-row items-center bg-surface active:bg-surface-2"
-        style={{ paddingVertical: 13, paddingLeft: 8, paddingRight: 18, gap: 11, minHeight: 64 }}
+        style={{ paddingVertical: 14, paddingLeft: 12, paddingRight: 18, gap: 12, minHeight: 72 }}
       >
-        {/* leading unread dot (16px gutter so divider aligns at left:79) */}
-        <View style={{ width: 16, alignItems: "center" }}>
+        {/* leading unread dot (fixed 10px gutter so the divider lines up) */}
+        <View style={{ width: 10, alignItems: "center" }}>
           {unread ? (
-            <View
-              style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: colors.accent }}
-            />
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.accent }} />
           ) : null}
         </View>
 
         {/* avatar + channel dot bottom-right */}
-        <View>
-          <Avatar name={item.client.name} size={44} />
+        <View style={{ width: 48, height: 48, alignItems: "center", justifyContent: "center" }}>
+          <Avatar name={item.client.name} size={46} />
           <View
             style={{
               position: "absolute",
-              right: -3,
-              bottom: -3,
+              right: -2,
+              bottom: -2,
               borderWidth: 2.5,
               borderColor: colors.surface,
               borderRadius: 999,
@@ -102,7 +100,7 @@ export function InboxRow({
 
         {/* main */}
         <View style={{ flex: 1, minWidth: 0 }}>
-          <View className="flex-row items-baseline justify-between" style={{ gap: 8 }}>
+          <View className="flex-row items-center justify-between" style={{ gap: 8 }}>
             <Text
               numberOfLines={1}
               className={unread ? "text-ink" : "text-ink"}
@@ -129,7 +127,7 @@ export function InboxRow({
         </View>
       </Pressable>
       {showDivider ? (
-        <View style={{ height: 1, backgroundColor: colors.line, marginLeft: 79 }} />
+        <View style={{ height: 1, backgroundColor: colors.line, marginLeft: 82 }} />
       ) : null}
     </Swipeable>
   );
