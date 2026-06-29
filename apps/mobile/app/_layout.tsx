@@ -98,10 +98,8 @@ export default function RootLayout() {
               <Stack.Screen
                 name="book"
                 options={{
-                  presentation: "formSheet",
-                  sheetGrabberVisible: true,
-                  sheetAllowedDetents: [0.9],
-                  sheetCornerRadius: 22,
+                  presentation: "transparentModal",
+                  animation: "fade",
                 }}
               />
             </Stack>

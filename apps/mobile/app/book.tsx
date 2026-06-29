@@ -1,34 +1,44 @@
-import { useEffect, useMemo, useState } from "react";
-import { View, Pressable, ScrollView, ActivityIndicator, TextInput } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { View, Pressable, ScrollView, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import BottomSheet, {
+  BottomSheetScrollView,
+  BottomSheetTextInput,
+  BottomSheetFooter,
+  BottomSheetBackdrop,
+  type BottomSheetFooterProps,
+} from "@gorhom/bottom-sheet";
 import { Icon } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
 import { Avatar } from "@/components/ui/Avatar";
 import { useAppointments } from "@/lib/useAppointments";
 import { listServices, fetchAllSlots, availableSlots, createBooking, type Service, type Slot } from "@/lib/booking";
-import { dayStrip, weekStart, todayKey, fmtHour } from "@/lib/calendar";
+import { dayStrip, weekStart, todayKey } from "@/lib/calendar";
 import { supabase } from "@/lib/supabase";
 import { colors } from "@/theme/colors";
 
 type Client = { id: string; name: string; phone: string | null };
 
-// The Book sheet — the star. Client → Service → Day → Time → Confirm. Slots are
-// real (availableSlots respects studio hours, service duration, and existing
-// appointments). Guardrails: nothing books without the explicit "Confirm in
-// Square" tap; copy never claims the AI booked it; honest success/failure.
+// The Book sheet — built on @gorhom/bottom-sheet for a proper modal sheet:
+//   • fixed title (doesn't scroll), • scrollable form body, • STICKY Confirm
+//     footer (BottomSheetFooter), • drag-down / backdrop-tap to dismiss.
+// This is the standard bottom-sheet pattern (Material/iOS): the CTA stays put
+// while content scrolls. Guardrails: nothing books without the explicit Confirm
+// tap; copy never claims the AI booked it; honest success/failure.
 export default function BookScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ day?: string; conversation?: string; client?: string }>();
   const { items: appts } = useAppointments();
+  const sheetRef = useRef<BottomSheet>(null);
 
   const [services, setServices] = useState<Service[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [client, setClient] = useState<Client | null>(null);
-  const [fixedClient, setFixedClient] = useState(false); // came from a conversation
+  const [fixedClient, setFixedClient] = useState(false);
   const [clientQuery, setClientQuery] = useState("");
   const [clientFocused, setClientFocused] = useState(false);
   const [svc, setSvc] = useState<Service | null>(null);
@@ -42,23 +52,24 @@ export default function BookScreen() {
 
   const days = useMemo(() => dayStrip(weekStart(todayKey()), 14), []);
 
-  // Filtered client matches for the searchable "For" picker (top 20).
   const clientMatches = useMemo(() => {
     const q = clientQuery.trim().toLowerCase();
     const base = q ? clients.filter((c) => c.name.toLowerCase().includes(q)) : clients;
     return base.slice(0, 20);
   }, [clients, clientQuery]);
 
+  // Dismiss = close the sheet, then pop the route (gorhom animates down first).
+  const close = useCallback(() => router.back(), [router]);
+
   useEffect(() => {
     (async () => {
       const [svcs, { data: cl }] = await Promise.all([
         listServices(),
-        supabase.from("clients").select("id, name, phone").order("name").limit(20),
+        supabase.from("clients").select("id, name, phone").order("name").limit(500),
       ]);
       setServices(svcs);
       setClients((cl ?? []) as Client[]);
 
-      // From a conversation: resolve + fix its client; prefill from intent_payload.
       if (params.conversation) {
         setOriginConvo(params.conversation);
         const { data: conv } = await supabase
@@ -68,10 +79,6 @@ export default function BookScreen() {
           .maybeSingle();
         const c = (conv as any)?.client;
         if (c) { setClient(c); setFixedClient(true); }
-        // Prefill the service from the AI's guess (intent_payload.service_guess
-        // | service). Fuzzy: exact key/name, else a word-overlap match so
-        // "haircut" → "Short Hair Cut". Time is NOT auto-picked (guardrail —
-        // the stylist confirms the slot).
         const payload = (conv as any)?.intent_payload;
         const guess = String(payload?.service_guess ?? payload?.service ?? "").toLowerCase().trim();
         if (guess) {
@@ -93,9 +100,6 @@ export default function BookScreen() {
     })();
   }, [params.conversation, params.client]);
 
-  // Fetch all availability ONCE per service (3 weeks, grouped by day) so
-  // switching days is instant — no network round-trip per tap. Local fallback
-  // per-day if Square returns nothing.
   const [slotsByDay, setSlotsByDay] = useState<Record<string, Slot[]>>({});
   const [slotsLoading, setSlotsLoading] = useState(false);
   useEffect(() => {
@@ -111,7 +115,6 @@ export default function BookScreen() {
     if (!svc) return [];
     const fromSquare = slotsByDay[dayKey];
     if (fromSquare && fromSquare.length) return fromSquare;
-    // Fallback: if Square returned nothing for this service at all, use local.
     if (Object.keys(slotsByDay).length === 0) return availableSlots(dayKey, svc.duration_minutes, appts);
     return [];
   }, [svc, dayKey, slotsByDay, appts]);
@@ -142,29 +145,64 @@ export default function BookScreen() {
     setResult(res.ok ? { ok: true } : { ok: false, error: res.error });
   }
 
-  if (result) {
-    // On success, dismiss the sheet and jump to the Calendar on the booked day
-    // so the new appointment is immediately visible. On failure, just close.
-    const onClose = () => {
-      router.back();
-      if (result.ok) {
-        setTimeout(() => router.push(`/(tabs)/calendar?day=${dayKey}`), 50);
-      }
-    };
-    return <ResultView result={result} client={client} svc={svc} slot={slot} dayKey={dayKey} onClose={onClose} onRetry={() => setResult(null)} />;
-  }
+  // Sticky footer — stays pinned above the keyboard/safe-area while body scrolls.
+  const renderFooter = useCallback(
+    (props: BottomSheetFooterProps) => {
+      if (loading || result) return null;
+      return (
+        <BottomSheetFooter {...props} bottomInset={insets.bottom}>
+          <View className="border-t border-line bg-bg px-5 pt-3 pb-3">
+            <Text className={ready ? "text-ink-2" : "text-ink-4"} style={{ fontSize: 13, marginBottom: 8, textAlign: "center" }}>
+              {ready && svc && slot
+                ? `${days.find((d) => d.key === dayKey)?.dow} ${days.find((d) => d.key === dayKey)?.n} · ${slot.label} · ${svc.name}`
+                : client ? "Pick a service and a time" : "Pick a client, service and time"}
+            </Text>
+            <Pressable onPress={confirm} disabled={!ready || submitting} accessibilityRole="button"
+              className="flex-row items-center justify-center rounded-control-lg" style={{ height: 52, backgroundColor: ready ? colors.plumStrong : colors.bgWarm, opacity: submitting ? 0.7 : 1 }}>
+              {submitting ? <ActivityIndicator color="#fff" /> : (
+                <>
+                  <Icon name="check" size={16} color={ready ? "#fff" : colors.ink2} />
+                  <Text style={{ marginLeft: 8, fontSize: 15.5, fontFamily: "Inter_600SemiBold", color: ready ? "#fff" : colors.ink2 }}>Confirm in Square</Text>
+                </>
+              )}
+            </Pressable>
+            <Text className="mt-2 text-center text-ink-4" style={{ fontSize: 11.5, lineHeight: 15 }}>
+              Reviewed by you — created in Square only when you confirm
+            </Text>
+          </View>
+        </BottomSheetFooter>
+      );
+    },
+    [loading, result, ready, svc, slot, client, dayKey, days, submitting],
+  );
+
+  const renderBackdrop = useCallback(
+    (props: any) => <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} pressBehavior="close" />,
+    [],
+  );
 
   return (
-    // collapsable={false}: RNScreens formSheet expects a single content subview;
-    // wrapping everything in one non-collapsable root removes the "expects at
-    // most 2 subviews" warning and keeps the pinned Confirm bar laid out right.
-    <View className="flex-1 bg-bg" collapsable={false}>
-      {/* No X — the native formSheet dismisses by dragging down or tapping the
-          backdrop (the grabber is provided by the sheet). */}
-      {loading ? (
+    <BottomSheet
+      ref={sheetRef}
+      index={0}
+      snapPoints={["92%"]}
+      enablePanDownToClose
+      onClose={close}
+      backdropComponent={renderBackdrop}
+      handleIndicatorStyle={{ backgroundColor: colors.line2, width: 38 }}
+      backgroundStyle={{ backgroundColor: colors.bg }}
+      footerComponent={renderFooter}
+    >
+      {result ? (
+        <ResultView
+          result={result} client={client} svc={svc} slot={slot} dayKey={dayKey}
+          onClose={() => { if (result.ok) { router.replace(`/(tabs)/calendar?day=${dayKey}`); } else { close(); } }}
+          onRetry={() => setResult(null)}
+        />
+      ) : loading ? (
         <View className="flex-1 items-center justify-center"><ActivityIndicator color={colors.ink4} /></View>
       ) : (
-        <ScrollView className="flex-1" contentContainerStyle={{ padding: 20, paddingTop: 16, paddingBottom: insets.bottom + 28 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <BottomSheetScrollView contentContainerStyle={{ padding: 20, paddingTop: 4, paddingBottom: 220 }} keyboardShouldPersistTaps="handled">
           {/* header */}
           <View className="flex-row items-center self-start rounded-pill bg-plum-soft px-2.5 py-1.5" style={{ gap: 5 }}>
             <Icon name="calendar" size={13} color={colors.plumInk} />
@@ -184,38 +222,35 @@ export default function BookScreen() {
                 </Pressable>
               ) : (
                 <View>
-                  {/* Search box with a dropdown of matches (appears on focus or
-                      while typing). Scales to many clients — no giant list. */}
                   <View className="flex-row items-center rounded-control-lg border border-line-2 bg-surface px-3.5" style={{ height: 48, gap: 8 }}>
                     <Icon name="search" size={16} color={colors.ink4} />
-                    <TextInput
+                    <BottomSheetTextInput
                       value={clientQuery}
                       onChangeText={setClientQuery}
                       onFocus={() => setClientFocused(true)}
                       placeholder="Search clients"
                       placeholderTextColor={colors.ink4}
                       autoCapitalize="none"
-                      className="flex-1 text-body text-ink"
-                      style={{ fontFamily: "Inter_400Regular", padding: 0 }}
+                      style={{ flex: 1, fontFamily: "Inter_400Regular", fontSize: 16, color: colors.ink, padding: 0 }}
                     />
                     {clientQuery ? (
                       <Pressable onPress={() => setClientQuery("")} hitSlop={8} accessibilityLabel="Clear"><Icon name="x" size={15} color={colors.ink4} /></Pressable>
                     ) : null}
                   </View>
                   {(clientFocused || clientQuery) ? (
-                  <View className="mt-2 overflow-hidden rounded-control-lg border border-line-2 bg-surface">
-                    {clientMatches.length === 0 ? (
-                      <View className="px-4 py-3"><Text className="text-ink-4" style={{ fontSize: 13.5 }}>No matches.</Text></View>
-                    ) : (
-                      clientMatches.map((c, i) => (
-                        <Pressable key={c.id} onPress={() => { setClient(c); setClientQuery(""); setClientFocused(false); }} accessibilityRole="button"
-                          className={`flex-row items-center px-3 py-2.5 ${i > 0 ? "border-t border-line" : ""}`} style={{ gap: 10, minHeight: 48 }}>
-                          <Avatar name={c.name} size={34} />
-                          <Text numberOfLines={1} className="text-ink" style={{ fontSize: 14.5, fontFamily: "Inter_500Medium" }}>{c.name}</Text>
-                        </Pressable>
-                      ))
-                    )}
-                  </View>
+                    <View className="mt-2 overflow-hidden rounded-control-lg border border-line-2 bg-surface">
+                      {clientMatches.length === 0 ? (
+                        <View className="px-4 py-3"><Text className="text-ink-4" style={{ fontSize: 13.5 }}>No matches.</Text></View>
+                      ) : (
+                        clientMatches.map((c, i) => (
+                          <Pressable key={c.id} onPress={() => { setClient(c); setClientQuery(""); setClientFocused(false); }} accessibilityRole="button"
+                            className={`flex-row items-center px-3 py-2.5 ${i > 0 ? "border-t border-line" : ""}`} style={{ gap: 10, minHeight: 48 }}>
+                            <Avatar name={c.name} size={34} />
+                            <Text numberOfLines={1} className="text-ink" style={{ fontSize: 14.5, fontFamily: "Inter_500Medium" }}>{c.name}</Text>
+                          </Pressable>
+                        ))
+                      )}
+                    </View>
                   ) : null}
                 </View>
               )}
@@ -276,7 +311,6 @@ export default function BookScreen() {
             {!svc ? (
               <Text className="text-ink-3" style={{ fontSize: 13.5 }}>Pick a service first so times fit around your day.</Text>
             ) : slotsLoading ? (
-              // Skeleton chips while Square availability loads (no broken look).
               <View>
                 {["Morning", "Afternoon"].map((label) => (
                   <View key={label} className="mb-3">
@@ -314,45 +348,21 @@ export default function BookScreen() {
                 ))
             )}
           </View>
-
-          {/* Confirm — lives at the END of the scroll content (not a pinned
-              footer). A pinned footer inside a native formSheet ScrollView was
-              unreliable (cut off / disappearing); an in-flow button is robust. */}
-          <View className="mt-6 px-5">
-            <Text className={ready ? "text-ink-2" : "text-ink-4"} style={{ fontSize: 13, marginBottom: 10, textAlign: "center" }}>
-              {ready && svc && slot
-                ? `${days.find((d) => d.key === dayKey)?.dow} ${days.find((d) => d.key === dayKey)?.n} · ${slot.label} · ${svc.name}`
-                : client ? "Pick a service and a time" : "Pick a client, service and time"}
-            </Text>
-            <Pressable onPress={confirm} disabled={!ready || submitting} accessibilityRole="button"
-              className="flex-row items-center justify-center rounded-control-lg" style={{ height: 52, backgroundColor: ready ? colors.plumStrong : colors.bgWarm, opacity: submitting ? 0.7 : 1 }}>
-              {submitting ? <ActivityIndicator color="#fff" /> : (
-                <>
-                  <Icon name="check" size={16} color={ready ? "#fff" : colors.ink2} />
-                  <Text style={{ marginLeft: 8, fontSize: 15.5, fontFamily: "Inter_600SemiBold", color: ready ? "#fff" : colors.ink2 }}>Confirm in Square</Text>
-                </>
-              )}
-            </Pressable>
-            <Text className="mt-2.5 text-center text-ink-4" style={{ fontSize: 12, lineHeight: 16 }}>
-              Reviewed by you — created in Square only when you confirm
-            </Text>
-          </View>
-        </ScrollView>
+        </BottomSheetScrollView>
       )}
-    </View>
+    </BottomSheet>
   );
 }
 
 function ResultView({
-  result, client, svc, slot, dayKey, onClose, onRetry,
+  result, client, svc, slot, onClose, onRetry,
 }: {
   result: { ok: boolean; error?: string };
   client: Client | null; svc: Service | null; slot: Slot | null; dayKey: string;
   onClose: () => void; onRetry: () => void;
 }) {
-  const insets = useSafeAreaInsets();
   return (
-    <View className="flex-1 items-center justify-center bg-bg px-gutter" style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}>
+    <View className="flex-1 items-center justify-center px-gutter" style={{ paddingVertical: 40 }}>
       <View className="items-center justify-center rounded-full" style={{ width: 72, height: 72, backgroundColor: result.ok ? colors.okSoft : colors.errSoft }}>
         <Icon name={result.ok ? "checkCircle" : "alert"} size={36} color={result.ok ? colors.okInk : colors.errInk} />
       </View>
