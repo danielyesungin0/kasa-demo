@@ -196,7 +196,20 @@ export default function BookScreen() {
       {result ? (
         <ResultView
           result={result} client={client} svc={svc} slot={slot} dayKey={dayKey}
-          onClose={() => { if (result.ok) { router.replace(`/(tabs)/calendar?day=${dayKey}`); } else { close(); } }}
+          onClose={() => {
+            if (!result.ok) { close(); return; }
+            // Booked from a conversation → return to that thread with a
+            // pre-filled confirmation DRAFT (stylist reviews + sends; never
+            // auto-sent). Otherwise show it on the calendar.
+            if (originConvo && client && svc && slot) {
+              const d = days.find((x) => x.key === dayKey);
+              const when = d ? `${d.dow} the ${d.n}` : "your appointment";
+              const draft = `Hi ${client.name.split(" ")[0].replace(/^@/, "")}! You're booked for a ${svc.name} on ${when} at ${slot.label}. See you then! 🤍`;
+              router.replace(`/thread/${originConvo}?draft=${encodeURIComponent(draft)}&booked=1`);
+            } else {
+              router.replace(`/(tabs)/calendar?day=${dayKey}`);
+            }
+          }}
           onRetry={() => setResult(null)}
         />
       ) : loading ? (

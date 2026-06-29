@@ -6,7 +6,7 @@
 // stays). Keyboard handling (rise above keyboard + bottom safe-area when down)
 // is owned by the parent's KeyboardAvoidingView; this component just lays out
 // the bar and pads the bottom inset.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { View, Pressable, TextInput, Keyboard } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon } from "@/components/ui/Icon";
@@ -19,15 +19,27 @@ export function Composer({
   onSend,
   onBook,
   onOpenExternal,
+  initialDraft,
 }: {
   state: ChannelState;
   onSend: (text: string) => void;
   onBook: () => void;
   onOpenExternal: () => void;
+  initialDraft?: string | null;
 }) {
   const insets = useSafeAreaInsets();
   const [text, setText] = useState("");
   const hasText = text.trim().length > 0;
+
+  // Seed the composer with a draft (e.g. the post-booking confirmation). Applied
+  // once per distinct draft so it doesn't clobber what the stylist is typing.
+  const seededRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (initialDraft && seededRef.current !== initialDraft) {
+      seededRef.current = initialDraft;
+      setText(initialDraft);
+    }
+  }, [initialDraft]);
 
   // When the keyboard is up it covers the home-indicator area, so the safe-area
   // bottom padding would create a gap above the keyboard. Drop it while the

@@ -25,7 +25,7 @@ import { channels } from "@/theme/colors";
 import { colors } from "@/theme/colors";
 
 export default function ThreadScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, draft, booked } = useLocalSearchParams<{ id: string; draft?: string; booked?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList>(null);
@@ -35,7 +35,9 @@ export default function ThreadScreen() {
 
   const { convo, messages, loading, appendOptimistic, reconcile, dropOptimistic } =
     useThread(id);
-  const [dismissedNudge, setDismissedNudge] = useState(false);
+  // After booking, we arrive with booked=1 → dismiss the nudge (it's done its job)
+  // and the draft confirmation is seeded into the composer for review.
+  const [dismissedNudge, setDismissedNudge] = useState(booked === "1");
   const [windowBanner, setWindowBanner] = useState<string | null>(null);
 
   const chState = useMemo(
@@ -192,6 +194,7 @@ export default function ThreadScreen() {
           onSend={doSend}
           onBook={() => router.push(`/book?conversation=${id}`)} // → Book sheet
           onOpenExternal={openExternal}
+          initialDraft={draft ?? null}
         />
       </KeyboardAvoidingView>
     </View>
