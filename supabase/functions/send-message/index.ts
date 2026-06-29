@@ -117,7 +117,9 @@ async function sendInstagram(admin: any, convo: any, text: string): Promise<{ ok
   const recipientId = convo.external_thread_id;
   if (!recipientId) return { ok: false, error: "no_recipient" };
 
-  let pageToken: string | null = null;
+  // Instagram Business Login stores an IG USER access token (graph.instagram.com),
+  // not a Page token. Read + decrypt it from the connected channel row.
+  let igToken: string | null = null;
   const { data: chan } = await admin
     .from("channels")
     .select("credentials_ref")
@@ -128,22 +130,20 @@ async function sendInstagram(admin: any, convo: any, text: string): Promise<{ ok
   if (chan?.credentials_ref) {
     try {
       const creds = JSON.parse(decryptSecret(chan.credentials_ref) ?? "{}");
-      pageToken = creds.page_access_token ?? null;
+      igToken = creds.access_token ?? creds.page_access_token ?? null;
     } catch { /* fall through */ }
   }
-  pageToken = pageToken ?? Deno.env.get("META_PAGE_ACCESS_TOKEN") ?? null;
-  if (!pageToken) return { ok: false, error: "meta_not_configured" };
+  if (!igToken) return { ok: false, error: "meta_not_configured" };
 
   try {
     const res = await fetch(
-      `https://graph.facebook.com/v21.0/me/messages?access_token=${encodeURIComponent(pageToken)}`,
+      `https://graph.instagram.com/v21.0/me/messages?access_token=${encodeURIComponent(igToken)}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           recipient: { id: recipientId },
           message: { text },
-          messaging_type: "RESPONSE",
         }),
       },
     );

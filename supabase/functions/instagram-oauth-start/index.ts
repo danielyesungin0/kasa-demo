@@ -1,26 +1,22 @@
 // ============================================================
-// instagram-oauth-start — begins the real Instagram (Meta) connect flow.
+// instagram-oauth-start — begins the Instagram Business Login flow (the newer
+// IG-direct path, not via a Facebook Page).
 //
 // The app's "Connect Instagram" calls this with the stylist's JWT; it returns
-// Meta's OAuth dialog URL. `state` = "<stylistId>.<nonce>" (the callback verifies
-// the nonce, stored on the stylist row, as a CSRF/replay guard). After the
-// seller authorizes, Meta redirects to instagram-oauth-callback.
-//
-// Scopes are the IG-messaging set; the Meta app must have these (via App Review
-// for production, or be in dev mode with the account added as a tester).
+// Instagram's OAuth dialog URL. `state` = "<stylistId>.<nonce>" (callback
+// verifies the nonce, stored on the stylist row, as a CSRF/replay guard).
+// Uses INSTAGRAM_APP_ID (the Instagram-login app id, distinct from META_APP_ID).
 // verify_jwt = true.
 // ============================================================
 
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 
+// Instagram Business Login scopes (the IG-direct API).
 const SCOPES = [
-  "instagram_basic",
-  "instagram_manage_messages",
-  "pages_show_list",
-  "pages_manage_metadata",
-  "pages_messaging",
-  "business_management",
+  "instagram_business_basic",
+  "instagram_business_manage_messages",
+  "instagram_business_manage_comments",
 ].join(",");
 
 function randomNonce(): string {
@@ -32,8 +28,8 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return jsonResponse({ error: "method_not_allowed" }, 405);
 
-  const appId = Deno.env.get("META_APP_ID");
-  if (!appId) return jsonResponse({ error: "meta_not_configured" }, 500);
+  const igAppId = Deno.env.get("INSTAGRAM_APP_ID");
+  if (!igAppId) return jsonResponse({ error: "meta_not_configured" }, 500);
 
   const authHeader = req.headers.get("Authorization") ?? "";
   const token = authHeader.replace(/^Bearer\s+/i, "");
@@ -55,8 +51,8 @@ Deno.serve(async (req) => {
   const redirectUri = `${Deno.env.get("SUPABASE_URL")}/functions/v1/instagram-oauth-callback`;
 
   const authorizeUrl =
-    `https://www.facebook.com/v21.0/dialog/oauth` +
-    `?client_id=${encodeURIComponent(appId)}` +
+    `https://www.instagram.com/oauth/authorize` +
+    `?client_id=${encodeURIComponent(igAppId)}` +
     `&redirect_uri=${encodeURIComponent(redirectUri)}` +
     `&scope=${encodeURIComponent(SCOPES)}` +
     `&response_type=code` +

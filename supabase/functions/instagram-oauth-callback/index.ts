@@ -1,23 +1,22 @@
 // ============================================================
-// instagram-oauth-callback — completes the Instagram (Meta) connect flow.
+// instagram-oauth-callback — completes Instagram Business Login.
 //
-// Meta redirects here with ?code & ?state. We:
+// Instagram redirects here with ?code & ?state. We:
 //   1. verify state nonce (CSRF/replay), clear it.
-//   2. exchange code → short-lived user token → long-lived user token.
-//   3. find the user's Page + its connected IG Business account.
-//   4. get the PAGE access token (what IG DM send/receive uses).
-//   5. store an instagram `channels` row: connected, external_account_id = the
-//      IG username/id, credentials_ref = ENCRYPTED page token + ids.
+//   2. exchange code → short-lived IG user token (api.instagram.com, form POST).
+//   3. exchange short → long-lived token (~60 days, graph.instagram.com).
+//   4. fetch the IG business profile (id + username).
+//   5. store an instagram `channels` row: connected, external_account_id =
+//      @username, credentials_ref = ENCRYPTED { ig_user_id, access_token }.
 //   6. redirect into the app via kasa://instagram-connected?status=.
 //
-// verify_jwt=false (Meta's redirect carries no app JWT; state+nonce are the
-// guard). Never logs tokens.
+// Uses INSTAGRAM_APP_ID / INSTAGRAM_APP_SECRET (the IG-login credentials).
+// verify_jwt=false (IG's redirect carries no app JWT). Never logs tokens.
 // ============================================================
 
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { encryptSecret, assertEncryptionKey } from "../_shared/crypto.ts";
 
-const GRAPH = "https://graph.facebook.com/v21.0";
 const APP_SCHEME = "kasa://instagram-connected";
 
 function redirectToApp(status: string): Response {
@@ -44,52 +43,57 @@ Deno.serve(async (req) => {
     .from("stylists").select("id, meta_oauth_nonce").eq("id", stylistId).maybeSingle();
   if (!stylist || stylist.meta_oauth_nonce !== nonce) return redirectToApp("invalid");
 
-  const appId = Deno.env.get("META_APP_ID");
-  const appSecret = Deno.env.get("META_APP_SECRET");
+  const igAppId = Deno.env.get("INSTAGRAM_APP_ID");
+  const igAppSecret = Deno.env.get("INSTAGRAM_APP_SECRET");
   const redirectUri = `${Deno.env.get("SUPABASE_URL")}/functions/v1/instagram-oauth-callback`;
-  if (!appId || !appSecret) return redirectToApp("server_misconfigured");
+  if (!igAppId || !igAppSecret) return redirectToApp("server_misconfigured");
 
   try {
-    // 2a) code → short-lived user token
-    const tokRes = await fetch(
-      `${GRAPH}/oauth/access_token?client_id=${appId}&client_secret=${appSecret}` +
-      `&redirect_uri=${encodeURIComponent(redirectUri)}&code=${encodeURIComponent(code)}`,
-    );
-    const tok = await tokRes.json();
-    if (!tokRes.ok || !tok.access_token) {
-      console.error("[ig-callback] token exchange failed", tokRes.status);
+    // 2) code → short-lived token (form-encoded POST to api.instagram.com)
+    const form = new URLSearchParams({
+      client_id: igAppId,
+      client_secret: igAppSecret,
+      grant_type: "authorization_code",
+      redirect_uri: redirectUri,
+      code,
+    });
+    const shortRes = await fetch("https://api.instagram.com/oauth/access_token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: form.toString(),
+    });
+    const short = await shortRes.json();
+    if (!shortRes.ok || !short.access_token) {
+      console.error("[ig-callback] short token failed", shortRes.status);
       return redirectToApp("exchange_failed");
     }
+    const igUserId = short.user_id ?? short.user?.id ?? null;
 
-    // 2b) short → long-lived user token (~60 days)
+    // 3) short → long-lived token (~60 days)
     const llRes = await fetch(
-      `${GRAPH}/oauth/access_token?grant_type=fb_exchange_token` +
-      `&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${tok.access_token}`,
+      `https://graph.instagram.com/access_token?grant_type=ig_exchange_token` +
+      `&client_secret=${igAppSecret}&access_token=${short.access_token}`,
     );
     const ll = await llRes.json();
-    const userToken = ll.access_token ?? tok.access_token;
+    const accessToken = ll.access_token ?? short.access_token;
 
-    // 3) find Page + connected IG business account, and the PAGE token.
-    const pagesRes = await fetch(
-      `${GRAPH}/me/accounts?fields=id,name,access_token,instagram_business_account{id,username}&access_token=${userToken}`,
-    );
-    const pages = await pagesRes.json();
-    const page = (pages.data ?? []).find((p: any) => p.instagram_business_account) ?? (pages.data ?? [])[0];
-    if (!page?.access_token) {
-      console.error("[ig-callback] no page/token found");
-      return redirectToApp("no_page");
-    }
-    const ig = page.instagram_business_account;
-    const igUsername = ig?.username ? `@${ig.username}` : (page.name ?? "Instagram");
+    // 4) fetch profile (username) for display
+    let username = "Instagram";
+    try {
+      const meRes = await fetch(
+        `https://graph.instagram.com/me?fields=user_id,username&access_token=${accessToken}`,
+      );
+      if (meRes.ok) {
+        const me = await meRes.json();
+        if (me.username) username = `@${me.username}`;
+      }
+    } catch { /* non-fatal */ }
 
-    // 5) store the channels row with the ENCRYPTED page token + ids.
+    // 5) store channels row (encrypted creds)
     const credBlob = encryptSecret(JSON.stringify({
-      page_id: page.id,
-      page_access_token: page.access_token,
-      ig_user_id: ig?.id ?? null,
+      ig_user_id: igUserId,
+      access_token: accessToken,
     }));
-
-    // upsert by (stylist_id, type='instagram') via select-then-write.
     const { data: existing } = await admin
       .from("channels").select("id")
       .eq("stylist_id", stylistId).eq("type", "instagram").maybeSingle();
@@ -98,7 +102,7 @@ Deno.serve(async (req) => {
       type: "instagram",
       connected: true,
       status: "connected",
-      external_account_id: igUsername,
+      external_account_id: username,
       credentials_ref: credBlob,
       last_sync_at: new Date().toISOString(),
     };
