@@ -66,7 +66,17 @@ export default function ThreadScreen() {
   }
 
   function openExternal() {
-    if (convo) Linking.openURL("https://").catch(() => {}); // TODO(oauth/deep-link): open the real channel app (Phase 4)
+    // Open the client's conversation in the native channel app where we can.
+    // Instagram: deep-link to the profile by handle. Others: no reliable public
+    // deep link yet (Phase 4), so do nothing rather than open a blank page.
+    const handle = convo?.client?.instagram_handle?.replace(/^@/, "");
+    if (convo?.channel_type === "instagram" && handle) {
+      const appUrl = `instagram://user?username=${handle}`;
+      const webUrl = `https://instagram.com/${handle}`;
+      Linking.canOpenURL(appUrl)
+        .then((ok) => Linking.openURL(ok ? appUrl : webUrl))
+        .catch(() => Linking.openURL(webUrl).catch(() => {}));
+    }
   }
 
   if (loading || !convo) {

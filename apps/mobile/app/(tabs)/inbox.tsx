@@ -24,12 +24,22 @@ export default function InboxScreen() {
   const router = useRouter();
   const { items, loading, reload } = useConversations();
   const [filter, setFilter] = useState<FilterKey>("all");
+  const [query, setQuery] = useState("");
 
   const list = useMemo(() => {
-    if (filter === "unread") return items.filter((i) => i.unread);
-    if (filter === "booked") return items.filter((i) => i.hasBooking);
-    return items;
-  }, [items, filter]);
+    let l = items;
+    if (filter === "unread") l = l.filter((i) => i.unread);
+    else if (filter === "booked") l = l.filter((i) => i.hasBooking);
+    const q = query.trim().toLowerCase();
+    if (q) {
+      l = l.filter(
+        (i) =>
+          (i.client?.name ?? "").toLowerCase().includes(q) ||
+          (i.snippet ?? "").toLowerCase().includes(q),
+      );
+    }
+    return l;
+  }, [items, filter, query]);
 
   async function markRead(item: InboxItem) {
     await supabase.from("conversations").update({ unread: false }).eq("id", item.id);
@@ -60,19 +70,26 @@ export default function InboxScreen() {
           </Pressable>
         </View>
 
-        {/* search (read-only placeholder, like the prototype) */}
+        {/* search — filters by client name or message text */}
         <View
           className="mb-3 flex-row items-center rounded-control bg-surface px-3.5"
           style={{ gap: 9, paddingVertical: 11 }}
         >
           <Icon name="search" size={16} color={colors.ink4} />
           <TextInput
+            value={query}
+            onChangeText={setQuery}
             placeholder="Search messages"
             placeholderTextColor={colors.ink4}
-            editable={false}
+            autoCapitalize="none"
             className="flex-1 text-body text-ink"
             style={{ fontFamily: "Inter_400Regular", padding: 0 }}
           />
+          {query ? (
+            <Pressable onPress={() => setQuery("")} hitSlop={8} accessibilityRole="button" accessibilityLabel="Clear search">
+              <Icon name="x" size={16} color={colors.ink4} />
+            </Pressable>
+          ) : null}
         </View>
 
         {/* filter chips */}
