@@ -3,6 +3,7 @@
 // and derives the channels they've reached out on.
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "./supabase";
+import { useAuth } from "./auth";
 import type { ChannelType } from "./types";
 
 export type ClientRow = {
@@ -28,17 +29,19 @@ export type ClientConvo = {
 };
 
 export function useClients() {
+  const { session } = useAuth();
   const [items, setItems] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async () => {
+    if (!session) return; // wait for auth; RLS returns nothing otherwise
     const { data } = await supabase
       .from("clients")
       .select("id, name, value, since, visits, last_appt_at, preferences, notes, tags, phone, email, instagram_handle")
       .order("name", { ascending: true });
     setItems((data ?? []) as ClientRow[]);
     setLoading(false);
-  }, []);
+  }, [session]);
 
   useEffect(() => {
     void reload();

@@ -6,6 +6,7 @@
 // Unread comes from the real `unread` field, never a local guess.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "./supabase";
+import { useAuth } from "./auth";
 import type { InboxItem, MessageRow } from "./types";
 
 const SNIPPET_NONE = "";
@@ -55,15 +56,20 @@ async function loadInbox(): Promise<InboxItem[]> {
 }
 
 export function useConversations() {
+  const { session } = useAuth();
   const [items, setItems] = useState<InboxItem[]>([]);
   const [loading, setLoading] = useState(true);
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const reload = useCallback(async () => {
+    // Without a session, RLS returns nothing — don't overwrite with an empty
+    // list (that's the "inbox blank on reload before auth restores" bug). Wait
+    // for the session; the effect below re-runs when it arrives.
+    if (!session) return;
     const next = await loadInbox();
     setItems(next);
     setLoading(false);
-  }, []);
+  }, [session]);
 
   // Debounce bursty Realtime events into a single reload (correctness over
   // micro-optimization; the inbox is small and a full reload is cheap + always

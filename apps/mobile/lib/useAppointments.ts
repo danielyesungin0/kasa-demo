@@ -5,6 +5,7 @@
 // Today + Calendar share this one source).
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "./supabase";
+import { useAuth } from "./auth";
 
 export type Appointment = {
   id: string;
@@ -35,10 +36,12 @@ export function hourOf(iso: string): number {
 }
 
 export function useAppointments() {
+  const { session } = useAuth();
   const [items, setItems] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async () => {
+    if (!session) return; // wait for auth; RLS returns nothing otherwise
     const { data } = await supabase
       .from("appointments")
       .select(
@@ -60,7 +63,7 @@ export function useAppointments() {
     }));
     setItems(mapped);
     setLoading(false);
-  }, []);
+  }, [session]);
 
   useEffect(() => {
     void reload();
