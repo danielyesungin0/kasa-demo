@@ -6,7 +6,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
 import { Avatar } from "@/components/ui/Avatar";
 import { useAppointments } from "@/lib/useAppointments";
-import { listServices, fetchSlots, createBooking, type Service, type Slot } from "@/lib/booking";
+import { listServices, fetchAllSlots, availableSlots, createBooking, type Service, type Slot } from "@/lib/booking";
 import { dayStrip, weekStart, todayKey, fmtHour } from "@/lib/calendar";
 import { supabase } from "@/lib/supabase";
 import { colors } from "@/theme/colors";
@@ -84,19 +84,28 @@ export default function BookScreen() {
     })();
   }, [params.conversation, params.client]);
 
-  // Real availability from square-availability (Square's true open slots when
-  // connected; local fallback otherwise). Re-fetched when service/day change.
-  const [slots, setSlots] = useState<Slot[]>([]);
+  // Fetch all availability ONCE per service (3 weeks, grouped by day) so
+  // switching days is instant — no network round-trip per tap. Local fallback
+  // per-day if Square returns nothing.
+  const [slotsByDay, setSlotsByDay] = useState<Record<string, Slot[]>>({});
   const [slotsLoading, setSlotsLoading] = useState(false);
   useEffect(() => {
     let active = true;
-    if (!svc) { setSlots([]); return; }
+    if (!svc) { setSlotsByDay({}); return; }
     setSlotsLoading(true);
-    fetchSlots(svc, dayKey, appts).then((s) => {
-      if (active) { setSlots(s); setSlotsLoading(false); }
+    fetchAllSlots(svc).then((byDay) => {
+      if (active) { setSlotsByDay(byDay); setSlotsLoading(false); }
     });
     return () => { active = false; };
-  }, [svc, dayKey, appts]);
+  }, [svc]);
+  const slots = useMemo<Slot[]>(() => {
+    if (!svc) return [];
+    const fromSquare = slotsByDay[dayKey];
+    if (fromSquare && fromSquare.length) return fromSquare;
+    // Fallback: if Square returned nothing for this service at all, use local.
+    if (Object.keys(slotsByDay).length === 0) return availableSlots(dayKey, svc.duration_minutes, appts);
+    return [];
+  }, [svc, dayKey, slotsByDay, appts]);
   useEffect(() => {
     if (slot && !slots.some((s) => s.startHour === slot.startHour)) setSlot(null);
   }, [slots]);
@@ -127,7 +136,10 @@ export default function BookScreen() {
   if (result) return <ResultView result={result} client={client} svc={svc} slot={slot} dayKey={dayKey} onClose={() => router.back()} onRetry={() => setResult(null)} />;
 
   return (
-    <View className="flex-1 bg-bg">
+    // collapsable={false}: RNScreens formSheet expects a single content subview;
+    // wrapping everything in one non-collapsable root removes the "expects at
+    // most 2 subviews" warning and keeps the pinned Confirm bar laid out right.
+    <View className="flex-1 bg-bg" collapsable={false}>
       {/* Close button only — the native formSheet provides the grabber + rounded
           top, so no fake handle or top inset here. */}
       <View className="flex-row items-center justify-end px-3 pt-2">
@@ -224,9 +236,18 @@ export default function BookScreen() {
             {!svc ? (
               <Text className="text-ink-3" style={{ fontSize: 13.5 }}>Pick a service first so times fit around your day.</Text>
             ) : slotsLoading ? (
-              <View className="flex-row items-center py-3" style={{ gap: 8 }}>
-                <ActivityIndicator size="small" color={colors.ink4} />
-                <Text className="text-ink-4" style={{ fontSize: 13 }}>Checking Square availability…</Text>
+              // Skeleton chips while Square availability loads (no broken look).
+              <View>
+                {["Morning", "Afternoon"].map((label) => (
+                  <View key={label} className="mb-3">
+                    <View className="mb-2 rounded bg-bg-warm" style={{ width: 72, height: 12 }} />
+                    <View className="flex-row flex-wrap" style={{ gap: 8 }}>
+                      {Array.from({ length: 6 }).map((_, i) => (
+                        <View key={i} className="rounded-control bg-bg-warm" style={{ width: 92, height: 44, opacity: 0.6 }} />
+                      ))}
+                    </View>
+                  </View>
+                ))}
               </View>
             ) : slots.length === 0 ? (
               <Text className="text-ink-3 py-2" style={{ fontSize: 13.5, lineHeight: 19 }}>

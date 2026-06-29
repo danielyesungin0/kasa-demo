@@ -90,7 +90,9 @@ Deno.serve(async (req) => {
   const startsAtIso = body.starts_at ?? "";
   const durationMinutes = body.duration_minutes ?? 0;
 
-  if (!startsAtIso || !clientName || !clientPhone || !durationMinutes) {
+  // Phone is optional — Instagram/WeChat clients often have none. Square's
+  // customer create works with just a name.
+  if (!startsAtIso || !clientName || !durationMinutes) {
     return jsonResponse({ error: "missing_required_fields" }, 400);
   }
 
@@ -306,31 +308,34 @@ async function findOrCreateCustomer(
   clientPhone: string,
   clientEmail: string | null,
 ): Promise<string> {
-  // Search by phone first (cheap dedupe; avoids a new customer per booking).
-  const searchRes = await fetch(`${SQUARE_BASE}/v2/customers/search`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${accessToken}`,
-      "Square-Version": SQUARE_VERSION,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      query: { filter: { phone_number: { exact: clientPhone } } },
-      limit: 1,
-    }),
-  });
-  if (searchRes.ok) {
-    const searchData = await searchRes.json();
-    const existing = searchData.customers?.[0];
-    if (existing?.id) return existing.id;
+  // Search by phone first when we have one (cheap dedupe). Many channels (IG/
+  // WeChat) have no phone — skip the search then and create by name.
+  if (clientPhone) {
+    const searchRes = await fetch(`${SQUARE_BASE}/v2/customers/search`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Square-Version": SQUARE_VERSION,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query: { filter: { phone_number: { exact: clientPhone } } },
+        limit: 1,
+      }),
+    });
+    if (searchRes.ok) {
+      const searchData = await searchRes.json();
+      const existing = searchData.customers?.[0];
+      if (existing?.id) return existing.id;
+    }
   }
 
   const [givenName, ...rest] = clientName.trim().split(/\s+/);
   const familyName = rest.join(" ") || undefined;
 
-  // Deterministic key by phone (no Date.now()) so a retry doesn't create a
-  // second customer if the search momentarily missed.
-  const custKey = await stableKey("cust", [clientPhone]);
+  // Deterministic key (no Date.now()) so a retry doesn't create a second
+  // customer. Key on phone if present, else the name.
+  const custKey = await stableKey("cust", [clientPhone || clientName]);
 
   const createRes = await fetch(`${SQUARE_BASE}/v2/customers`, {
     method: "POST",
@@ -343,7 +348,7 @@ async function findOrCreateCustomer(
       idempotency_key: custKey,
       given_name: givenName,
       family_name: familyName,
-      phone_number: clientPhone,
+      phone_number: clientPhone || undefined,
       email_address: clientEmail ?? undefined,
     }),
   });

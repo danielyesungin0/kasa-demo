@@ -74,6 +74,43 @@ export async function fetchSlots(
   }
 }
 
+/** Fetch ALL availability for a service once (3 weeks), grouped by dateKey, so
+ *  the Book sheet can switch days instantly without a network round-trip each
+ *  tap. Returns {} on failure (caller falls back to the local engine per-day). */
+export async function fetchAllSlots(service: Service): Promise<Record<string, Slot[]>> {
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    const res = await fetch(`${FUNCTIONS_URL}/square-availability`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        service_id: service.id,
+        service_variation_id: service.square_variation_id,
+        duration_minutes: service.duration_minutes,
+        week_count: 3,
+      }),
+    });
+    if (!res.ok) throw new Error(String(res.status));
+    const json = await res.json();
+    const all: any[] = json.slots ?? [];
+    const byDay: Record<string, Slot[]> = {};
+    for (const s of all) {
+      const slot: Slot = {
+        startHour: s.hour24 + (Number(s.isoTime?.split(":")[1] ?? 0) / 60),
+        label: s.timeLabel,
+      };
+      (byDay[s.dateKey] ??= []).push(slot);
+    }
+    return byDay;
+  } catch {
+    return {};
+  }
+}
+
 /** Open start-times for a service on a day, given existing appointments.
  *  Local mirror of square-availability (respects studio hours + conflicts).
  *  Used as the offline fallback for fetchSlots. */
