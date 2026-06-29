@@ -10,7 +10,7 @@
 // confirm tap; idempotency key is deterministic (no duplicate bookings on
 // retry), matching the function's SHA-256(stylist+variation+start+phone) scheme.
 import * as Crypto from "expo-crypto";
-import { supabase } from "./supabase";
+import { supabase, FUNCTIONS_URL } from "./supabase";
 import { OPEN_HOUR, CLOSE_HOUR, parseKey } from "./calendar";
 import { hourOf, dayKeyOf, type Appointment } from "./useAppointments";
 
@@ -89,8 +89,11 @@ export type BookResult =
   | { ok: true; appointmentId: string; idempotencyKey: string }
   | { ok: false; error: string };
 
-/** Create a booking. Writes the appointment row (source='kasa') in the shape
- *  square-create-booking will. NEVER called without an explicit confirm tap. */
+/** Create a booking. NEVER called without an explicit "Confirm in Square" tap.
+ *  If the service is mapped to a Square variation, this calls the deployed
+ *  square-create-booking function — Square is the source of truth (it books at
+ *  Square FIRST, then mirrors to the appointments row with square_booking_id).
+ *  Only if the service has no Square mapping do we fall back to a local row. */
 export async function createBooking(args: {
   service: Service;
   clientId: string;
@@ -100,28 +103,49 @@ export async function createBooking(args: {
   startHour: number;
   originConversationId?: string | null;
 }): Promise<BookResult> {
-  const { data: stylist } = await supabase
-    .from("stylists")
-    .select("id")
-    .limit(1)
-    .maybeSingle();
-  if (!stylist?.id) return { ok: false, error: "No stylist record." };
-
   const { startISO } = instantFor(args.dayKey, args.startHour);
-  const endISO = new Date(
-    new Date(startISO).getTime() + args.service.duration_minutes * 60_000,
-  ).toISOString();
 
-  const idemKey = await idempotencyKey([
-    stylist.id,
-    args.service.square_variation_id ?? args.service.id,
-    startISO,
-    args.clientPhone ?? args.clientId,
-  ]);
+  // Real Square path (service is mapped to a variation).
+  if (args.service.square_variation_id) {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) return { ok: false, error: "You're signed out — sign in and retry." };
 
-  // TODO(square): call square-create-booking with this idemKey; on its success
-  // it writes the row with square_booking_id set. For the local seam we write
-  // directly and leave square_booking_id null.
+    try {
+      const res = await fetch(`${FUNCTIONS_URL}/square-create-booking`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_id: args.clientId,
+          service_id: args.service.id,
+          service_variation_id: args.service.square_variation_id,
+          starts_at: startISO,
+          duration_minutes: args.service.duration_minutes,
+          client_name: args.clientName,
+          client_phone: args.clientPhone ?? "",
+          origin_conversation_id: args.originConversationId ?? null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) {
+        // Honest failure — Square wasn't reached / refused. Nothing was created.
+        return { ok: false, error: squareErrorMessage(json.error) };
+      }
+      return {
+        ok: true,
+        appointmentId: json.appointment_id ?? json.square_booking_id,
+        idempotencyKey: "",
+      };
+    } catch {
+      return { ok: false, error: "Couldn't reach Square. Nothing was booked." };
+    }
+  }
+
+  // Local fallback (unmapped service) — write the row directly.
+  const { data: stylist } = await supabase.from("stylists").select("id").limit(1).maybeSingle();
+  if (!stylist?.id) return { ok: false, error: "No stylist record." };
+  const endISO = new Date(new Date(startISO).getTime() + args.service.duration_minutes * 60_000).toISOString();
+  const idemKey = await idempotencyKey([stylist.id, args.service.id, startISO, args.clientPhone ?? args.clientId]);
   const { data, error } = await supabase
     .from("appointments")
     .insert({
@@ -139,7 +163,13 @@ export async function createBooking(args: {
     })
     .select("id")
     .single();
-
   if (error) return { ok: false, error: error.message };
   return { ok: true, appointmentId: (data as any).id, idempotencyKey: idemKey };
+}
+
+function squareErrorMessage(err: unknown): string {
+  const code = typeof err === "string" ? err : "";
+  if (code === "no_token" || code === "token_invalid") return "Square connection expired — reconnect in Settings.";
+  if (code === "slot_unavailable") return "That time was just taken. Pick another slot.";
+  return "Couldn't create the booking in Square. Nothing was booked.";
 }
