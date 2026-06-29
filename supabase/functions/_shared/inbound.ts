@@ -81,7 +81,12 @@ export async function normalizeInbound(
   msg: InboundMessage,
   opts: { signatureVerified: boolean; provider: string; rawPayload: unknown },
 ): Promise<NormalizeResult> {
-  const sentAt = msg.sentAt ?? new Date().toISOString();
+  // sentAt = when the CLIENT sent it (provider clock) — for display only.
+  // receivedAt = when WE received it (server clock) — anchors the reply window
+  // and inbox ordering, which must not depend on a provider's (possibly skewed
+  // or spoofed) timestamp. The reply-window gate is security-relevant.
+  const receivedAt = new Date().toISOString();
+  const sentAt = msg.sentAt ?? receivedAt;
 
   // 0) Persist raw payload for debugging (never trust it beyond this record).
   try {
@@ -183,9 +188,9 @@ export async function normalizeInbound(
       client_id: clientId,
       channel_type: msg.channel,
       external_thread_id: msg.externalThreadId ?? null,
-      last_message_at: sentAt,
+      last_message_at: receivedAt,
       unread: true,
-      window_expires_at: windowExpiry(msg.channel, sentAt),
+      window_expires_at: windowExpiry(msg.channel, receivedAt),
     };
 
     if (convo?.id) {

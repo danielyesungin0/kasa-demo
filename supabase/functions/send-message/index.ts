@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
 
   const { data: convo } = await admin
     .from("conversations")
-    .select("id, channel_type, window_expires_at, external_thread_id")
+    .select("id, stylist_id, channel_type, window_expires_at, external_thread_id")
     .eq("id", body.conversation_id)
     .maybeSingle();
   if (!convo) return jsonResponse({ error: "conversation_not_found" }, 404);
@@ -57,7 +57,9 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Write the outbound message optimistically (status sent; updated on dispatch).
+  // Write the outbound message optimistically as 'sent', dispatch, then DOWNGRADE
+  // to 'failed' if the provider rejects — honest delivery state (the message_status
+  // enum has no in-flight value; this matches the app's optimistic-then-reconcile).
   const { data: msg, error: msgErr } = await admin
     .from("messages")
     .insert({
@@ -69,13 +71,77 @@ Deno.serve(async (req) => {
     })
     .select("id")
     .single();
-  if (msgErr || !msg) return jsonResponse({ error: "message_save_failed" }, 500);
+  if (msgErr || !msg) {
+    console.error("[send] message insert failed:", msgErr?.message);
+    return jsonResponse({ error: "message_save_failed", detail: msgErr?.message }, 500);
+  }
 
-  // Clear unread on reply.
-  await admin.from("conversations").update({ unread: false, last_message_at: new Date().toISOString() }).eq("id", convo.id);
+  // ── Dispatch via the channel API ──
+  let sendResult: { ok: boolean; providerId?: string; error?: string };
+  if (convo.channel_type === "instagram") {
+    sendResult = await sendInstagram(admin, convo, text);
+  } else {
+    // WeChat/SMS/Kakao not yet wired — mark sent locally (no provider) so the
+    // app still works for those channels in dev; real sends are later chunks.
+    sendResult = { ok: true };
+  }
 
-  // TODO(send): dispatch via the channel API (Meta / WeChat / Twilio). On
-  // provider failure, set messages.status='failed' and surface it. Phase 4.
+  if (!sendResult.ok) {
+    await admin.from("messages").update({ status: "failed" }).eq("id", msg.id);
+    return jsonResponse({
+      ok: false,
+      message_id: msg.id,
+      reason: "send_failed",
+      detail: sendResult.error ?? "provider_error",
+      channel: convo.channel_type,
+    });
+  }
+
+  await admin.from("messages")
+    .update({ status: "sent", channel_message_id: sendResult.providerId ?? null })
+    .eq("id", msg.id);
+  await admin.from("conversations")
+    .update({ unread: false, last_message_at: new Date().toISOString() })
+    .eq("id", convo.id);
 
   return jsonResponse({ ok: true, message_id: msg.id, channel: convo.channel_type });
 });
+
+// Send an Instagram DM via the Meta Graph API. Uses the Page access token (Meta
+// sends IG DMs through the linked Page). recipient.id is the IG-scoped user id
+// we stored as the conversation's external_thread_id. Returns the provider
+// message id on success; an honest error otherwise. Never logs the token.
+// deno-lint-ignore no-explicit-any
+async function sendInstagram(admin: any, convo: any, text: string): Promise<{ ok: boolean; providerId?: string; error?: string }> {
+  const pageToken = Deno.env.get("META_PAGE_ACCESS_TOKEN");
+  if (!pageToken) return { ok: false, error: "meta_not_configured" };
+  const recipientId = convo.external_thread_id;
+  if (!recipientId) return { ok: false, error: "no_recipient" };
+
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/v21.0/me/messages?access_token=${encodeURIComponent(pageToken)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          recipient: { id: recipientId },
+          message: { text },
+          messaging_type: "RESPONSE",
+        }),
+      },
+    );
+    const data = await res.json();
+    if (!res.ok) {
+      // Surface the error code/subcode only (no token). Common: #10 outside
+      // the 24h window (we already gate on window, but Meta is authoritative).
+      const code = data?.error?.code ?? "unknown";
+      console.error("[send] Instagram send failed", res.status, code);
+      return { ok: false, error: `meta_${code}` };
+    }
+    return { ok: true, providerId: data.message_id };
+  } catch (e) {
+    console.error("[send] Instagram send threw", (e as Error).name);
+    return { ok: false, error: "meta_unreachable" };
+  }
+}

@@ -15,13 +15,40 @@ import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { type InboundMessage, normalizeInbound } from "../_shared/inbound.ts";
 
-// TODO(verify): verify Meta's X-Hub-Signature-256 (HMAC-SHA256 of the raw body
-// with META_APP_SECRET) BEFORE parsing. Must run on the raw bytes, so read the
-// body as text first and pass the verified flag into normalizeInbound.
-function verifyMetaSignature(_rawBody: string, _header: string | null): boolean {
-  // Phase 4: implement HMAC check. Until then, mark unverified (and the raw
-  // payload is still logged to webhook_events for debugging).
-  return false;
+// Verify Meta's X-Hub-Signature-256: HMAC-SHA256 of the RAW request body keyed
+// by META_APP_SECRET, compared to the "sha256=..." header. Must run on the raw
+// bytes (any re-serialization breaks the hash). Timing-safe compare.
+async function verifyMetaSignature(
+  rawBody: string,
+  header: string | null,
+): Promise<boolean> {
+  const secret = Deno.env.get("META_APP_SECRET");
+  if (!secret || !header) return false;
+  const expected = header.startsWith("sha256=") ? header.slice(7) : header;
+
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sigBuf = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(rawBody),
+  );
+  const actual = [...new Uint8Array(sigBuf)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+
+  // Constant-time comparison.
+  if (actual.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < actual.length; i++) {
+    diff |= actual.charCodeAt(i) ^ expected.charCodeAt(i);
+  }
+  return diff === 0;
 }
 
 /** Parse a Meta messaging webhook body into zero or more InboundMessages. */
@@ -43,6 +70,10 @@ function parseMeta(payload: unknown): InboundMessage[] {
         channel: "instagram",
         externalUserId: sender,
         channelMessageId: message.mid,
+        // For IG Messenger you reply to the sender's IG-scoped id (recipient.id),
+        // so the sender IS the thread recipient. Store it so send-message can
+        // reach this person.
+        externalThreadId: sender,
         text: message.text ?? null,
         media: message.attachments ?? null,
         sentAt: typeof m.timestamp === "number"
@@ -78,10 +109,19 @@ Deno.serve(async (req) => {
 
   // Read raw body once (signature check must run on raw bytes).
   const rawBody = await req.text();
-  const signatureVerified = verifyMetaSignature(
+  const signatureVerified = await verifyMetaSignature(
     rawBody,
     req.headers.get("x-hub-signature-256"),
   );
+
+  // Security gate: once META_APP_SECRET is configured (real deployment), REJECT
+  // any POST that fails signature verification — that's a forged/replayed call.
+  // Before the secret is set (local dev w/ simulated payloads), allow through so
+  // the pipeline is testable; those are flagged signatureVerified=false.
+  const secretConfigured = Boolean(Deno.env.get("META_APP_SECRET"));
+  if (secretConfigured && !signatureVerified) {
+    return jsonResponse({ error: "invalid_signature" }, 401);
+  }
 
   let payload: unknown;
   try {
