@@ -6,8 +6,8 @@
 // stays). Keyboard handling (rise above keyboard + bottom safe-area when down)
 // is owned by the parent's KeyboardAvoidingView; this component just lays out
 // the bar and pads the bottom inset.
-import { useState } from "react";
-import { View, Pressable, TextInput } from "react-native";
+import { useEffect, useState } from "react";
+import { View, Pressable, TextInput, Keyboard } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
@@ -29,6 +29,16 @@ export function Composer({
   const [text, setText] = useState("");
   const hasText = text.trim().length > 0;
 
+  // When the keyboard is up it covers the home-indicator area, so the safe-area
+  // bottom padding would create a gap above the keyboard. Drop it while the
+  // keyboard is shown; keep it when down.
+  const [kbUp, setKbUp] = useState(false);
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardWillShow", () => setKbUp(true));
+    const hide = Keyboard.addListener("keyboardWillHide", () => setKbUp(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+
   function handleSend() {
     const t = text.trim();
     if (!t) return;
@@ -39,7 +49,7 @@ export function Composer({
   return (
     <View
       className="border-t border-line bg-surface px-4 pt-2.5"
-      style={{ paddingBottom: Math.max(12, insets.bottom) }}
+      style={{ paddingBottom: kbUp ? 8 : Math.max(12, insets.bottom) }}
     >
       <View
         className="flex-row items-center rounded-[24px] border border-line bg-bg p-1.5"

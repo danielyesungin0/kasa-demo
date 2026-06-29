@@ -29,6 +29,9 @@ export default function ThreadScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList>(null);
+  // Measure the real header height so KeyboardAvoidingView's offset is exact
+  // (a hardcoded guess left a gap between the keyboard and the input).
+  const [headerH, setHeaderH] = useState(0);
 
   const { convo, messages, loading, appendOptimistic, reconcile, dropOptimistic } =
     useThread(id);
@@ -105,7 +108,7 @@ export default function ThreadScreen() {
   return (
     <View className="flex-1 bg-bg" style={{ paddingTop: insets.top }}>
       {/* nav header: back · tappable name→profile · client-details */}
-      <View className="flex-row items-center border-b border-line px-3.5" style={{ minHeight: 54, gap: 8, paddingVertical: 9 }}>
+      <View onLayout={(e) => setHeaderH(e.nativeEvent.layout.height)} className="flex-row items-center border-b border-line px-3.5" style={{ minHeight: 54, gap: 8, paddingVertical: 9 }}>
         <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Back" className="items-center justify-center rounded-full active:bg-bg-warm" style={{ width: 42, height: 42 }}>
           <Icon name="back" size={22} color={colors.ink} />
         </Pressable>
@@ -137,7 +140,7 @@ export default function ThreadScreen() {
       <KeyboardAvoidingView
         className="flex-1"
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={insets.top + 54}
+        keyboardVerticalOffset={insets.top + headerH}
       >
         <FlatList
           ref={listRef}

@@ -237,7 +237,20 @@ Deno.serve(async (req) => {
         rangeEnd,
       });
       if (squareSlots.length) {
-        slots = squareSlots;
+        // Subtract OUR existing appointments from Square's slots. Square's
+        // sandbox/settings may permit overlapping bookings, but a single stylist
+        // can't double-book — so never offer a time that overlaps an appointment
+        // we already have (defense in depth on top of Square's own availability).
+        const busy = (apptRows ?? []).map((a: any) => ({
+          s: new Date(a.starts_at).getTime(),
+          e: new Date(a.ends_at).getTime(),
+        }));
+        const durMs = durationMinutes * 60 * 1000;
+        slots = squareSlots.filter((slot) => {
+          const start = new Date(slot.startsAtIso).getTime();
+          const end = start + durMs;
+          return !busy.some((b) => start < b.e && end > b.s);
+        });
         source = "square";
       }
     }
