@@ -94,7 +94,14 @@ export function useChannels(): ChannelsData {
   const connectSquare = useCallback(async () => {
     setState("square", { state: "connecting" });
     let sub: { remove: () => void } | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
+      // If a token was already stored (e.g. linked out-of-band in sandbox),
+      // don't launch OAuth — just reflect the real connected state.
+      const { data: pre } = await supabase
+        .from("stylists").select("square_merchant_id").limit(1).maybeSingle();
+      if (pre?.square_merchant_id) { await refresh(); return; }
+
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
       if (!token) return setState("square", { state: "idle" });
@@ -115,23 +122,23 @@ export function useChannels(): ChannelsData {
         });
       });
 
-      await WebBrowser.openBrowserAsync(json.authorize_url, { showInRecents: true });
-      // Wait for the callback's deep link (or a 2-min safety timeout), then
-      // close the browser tab.
+      // openBrowserAsync resolves when the user closes the tab; the deep link
+      // resolves on a successful callback; a short timeout guarantees we never
+      // hang in a permanent loading state (Square sandbox OAuth often can't
+      // complete in-app — see square-sandbox-setup memory).
+      const browser = WebBrowser.openBrowserAsync(json.authorize_url, { showInRecents: true });
       await Promise.race([
         returned,
-        new Promise<string>((r) => setTimeout(() => r(""), 120_000)),
+        browser,
+        new Promise<string>((r) => { timer = setTimeout(() => r(""), 45_000); }),
       ]);
       WebBrowser.dismissBrowser();
-
-      // Either way, re-read truth from the stylists row (no fake state). The
-      // callback persists tokens server-side regardless of how the browser
-      // closed; if it didn't connect, refresh() leaves Square idle.
-      await refresh();
+      await refresh(); // re-read truth; idle stays idle if it didn't connect
     } catch {
       setState("square", { state: "idle" });
     } finally {
       sub?.remove();
+      if (timer) clearTimeout(timer);
     }
   }, [refresh]);
 

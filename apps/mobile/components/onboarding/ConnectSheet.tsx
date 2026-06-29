@@ -14,22 +14,25 @@ type Provider = "square" | "instagram" | "wechat";
 
 function Requirement({ text }: { text: React.ReactNode }) {
   return (
-    <View className="flex-row items-start border-b border-line py-3" style={{ gap: 11 }}>
-      <View className="items-center justify-center rounded-full border-2 border-ok" style={{ width: 22, height: 22 }}>
-        <Icon name="check" size={12} color={colors.ok} strokeWidth={3} />
+    <View className="flex-row border-b border-line py-3" style={{ gap: 12 }}>
+      <View className="items-center justify-center rounded-full" style={{ width: 24, height: 24, marginTop: 1, backgroundColor: colors.okSoft }}>
+        <Icon name="check" size={13} color={colors.okInk} strokeWidth={3} />
       </View>
-      <Text className="flex-1 text-ink-2" style={{ fontSize: 14, lineHeight: 20 }}>{text}</Text>
+      <Text className="flex-1 text-ink-2" style={{ fontSize: 14, lineHeight: 21 }}>{text}</Text>
     </View>
   );
 }
 
 function Step({ n, text }: { n: number; text: React.ReactNode }) {
   return (
-    <View className="flex-row items-start border-b border-line py-3" style={{ gap: 11 }}>
-      <View className="items-center justify-center rounded-full border-2 border-ink-4" style={{ width: 22, height: 22 }}>
-        <Text style={{ fontSize: 12, fontFamily: "Inter_700Bold", color: colors.ink4 }}>{n}</Text>
+    <View className="flex-row border-b border-line py-3" style={{ gap: 12 }}>
+      <View
+        className="items-center justify-center rounded-full"
+        style={{ width: 24, height: 24, marginTop: 1, backgroundColor: colors.plumStrong }}
+      >
+        <Text style={{ fontSize: 12, lineHeight: 24, textAlign: "center", fontFamily: "Inter_700Bold", color: "#fff" }}>{n}</Text>
       </View>
-      <Text className="flex-1 text-ink-2" style={{ fontSize: 14, lineHeight: 20 }}>{text}</Text>
+      <Text className="flex-1 text-ink-2" style={{ fontSize: 14, lineHeight: 21 }}>{text}</Text>
     </View>
   );
 }

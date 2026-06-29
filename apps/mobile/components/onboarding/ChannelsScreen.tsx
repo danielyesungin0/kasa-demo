@@ -4,7 +4,7 @@
 //   - Settings → Channels (gated=false): same rows + sheets, no gate button.
 // Backed by the real channels table + stylist Square fields (useChannels).
 import { useState } from "react";
-import { View, Pressable, ScrollView, ActivityIndicator } from "react-native";
+import { View, Pressable, ScrollView, ActivityIndicator, RefreshControl } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
@@ -39,7 +39,9 @@ export function ChannelsScreen({
   onReady?: () => void;
 }) {
   const insets = useSafeAreaInsets();
-  const { loading, conn, connectSquare, connectChannel, disconnect } = useChannels();
+  const { loading, conn, refresh, connectSquare, connectChannel, disconnect } = useChannels();
+  const [refreshing, setRefreshing] = useState(false);
+  async function onRefresh() { setRefreshing(true); await refresh(); setRefreshing(false); }
   const [sheet, setSheet] = useState<ProviderId | null>(null);
 
   const channelsConnected =
@@ -112,7 +114,11 @@ export function ChannelsScreen({
 
   return (
     <View className="flex-1 bg-bg" style={{ paddingTop: insets.top }}>
-      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + (gated ? 140 : 40) }} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + (gated ? 140 : 40) }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.ink4} />}
+      >
         {gated ? (
           <>
             <Text variant="eyebrow" className="text-ink-4">Step 2 of 2</Text>
