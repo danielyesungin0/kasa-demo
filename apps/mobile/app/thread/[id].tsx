@@ -136,7 +136,7 @@ export default function ThreadScreen() {
           <BookingNudge
             payload={convo.intent_payload}
             firstName={firstName}
-            onBook={() => router.push(`/book?conversation=${id}`)} // TODO(book-sheet): wire to the real Book sheet when built
+            onBook={() => router.push(`/book?conversation=${id}`)} // → Book sheet, prefilled from this conversation's client + intent
             onDismiss={() => setDismissedNudge(true)}
           />
         ) : null}
@@ -168,7 +168,7 @@ export default function ThreadScreen() {
         <Composer
           state={chState ?? { canSend: true }}
           onSend={doSend}
-          onBook={() => router.push(`/book?conversation=${id}`)} // TODO(book-sheet)
+          onBook={() => router.push(`/book?conversation=${id}`)} // → Book sheet
           onOpenExternal={openExternal}
         />
       </KeyboardAvoidingView>
