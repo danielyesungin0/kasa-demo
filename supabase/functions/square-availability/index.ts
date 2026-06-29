@@ -33,10 +33,90 @@ import {
   type BlockedTimeRow,
   generateSlots,
   type StylistAvailabilityRow,
+  type TimeSlot,
 } from "../_shared/availability.ts";
+import { ensureFreshSquareToken, SQUARE_BASE } from "../_shared/square-token.ts";
 
 const DEFAULT_DURATION_MIN = 60;
 const WEEK_COUNT_DEFAULT = 3;
+const SQUARE_VERSION = "2024-01-18";
+const TZ = "America/New_York";
+const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// Format a UTC instant into the TimeSlot shape the app expects, in NY wall time.
+function squareSlotFromIso(iso: string): TimeSlot {
+  const d = new Date(iso);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false, weekday: "short",
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  const y = get("year"), mo = get("month"), day = get("day");
+  let hh = parseInt(get("hour"), 10); const mm = get("minute");
+  const dateKey = `${y}-${mo}-${day}`;
+  const dow = new Date(Date.UTC(+y, +mo - 1, +day)).getUTCDay();
+  const ampm = hh >= 12 ? "PM" : "AM";
+  const h12 = hh % 12 === 0 ? 12 : hh % 12;
+  const timeLabel = `${h12}:${mm} ${ampm}`;
+  const monthName = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+mo - 1];
+  return {
+    id: `sq-${iso}`,
+    dayLabel: DOW[dow],
+    dateLabel: `${monthName} ${+day}`,
+    timeLabel,
+    fullLabel: `${DOW[dow]} ${timeLabel}`,
+    dateKey,
+    dayOfMonth: +day,
+    hour24: hh,
+    isoTime: `${String(hh).padStart(2, "0")}:${mm}`,
+    startsAtIso: d.toISOString(),
+  };
+}
+
+// Query Square's real SearchAvailability (seller hours + staff + bookings).
+async function searchSquareAvailability(args: {
+  accessToken: string;
+  locationId: string;
+  teamMemberId: string;
+  serviceVariationId: string;
+  rangeStart: Date;
+  rangeEnd: Date;
+}): Promise<TimeSlot[]> {
+  // Square caps the search window (~32 days); clamp to be safe.
+  const end = new Date(Math.min(
+    args.rangeEnd.getTime(),
+    args.rangeStart.getTime() + 31 * 86400000,
+  ));
+  const res = await fetch(`${SQUARE_BASE}/v2/bookings/availability/search`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${args.accessToken}`,
+      "Square-Version": SQUARE_VERSION,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      query: {
+        filter: {
+          start_at_range: {
+            start_at: args.rangeStart.toISOString(),
+            end_at: end.toISOString(),
+          },
+          location_id: args.locationId,
+          segment_filters: [{
+            service_variation_id: args.serviceVariationId,
+            team_member_id_filter: { any: [args.teamMemberId] },
+          }],
+        },
+      },
+    }),
+  });
+  if (!res.ok) {
+    console.error("[availability] Square SearchAvailability", res.status);
+    return [];
+  }
+  const data = await res.json();
+  return (data.availabilities ?? []).map((a: any) => squareSlotFromIso(a.start_at));
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -74,17 +154,18 @@ Deno.serve(async (req) => {
   }
   if (!stylistId) return jsonResponse({ error: "stylist_not_found" }, 404);
 
-  // Resolve duration: from the services row if a service_id is given, else the
-  // passed duration_minutes, else default. (No stale svc-* fallback map — that
-  // was old-catalog cruft.)
+  // Resolve duration + Square variation from provider_services (the live
+  // catalog). Falls back to passed duration / default.
   let durationMinutes = body.duration_minutes ?? DEFAULT_DURATION_MIN;
+  let serviceVariationId: string | null = body.service_variation_id ?? null;
   if (body.service_id) {
     const { data: svc } = await admin
-      .from("services")
-      .select("duration_minutes")
+      .from("provider_services")
+      .select("duration_minutes, square_variation_id")
       .eq("id", body.service_id)
       .maybeSingle();
     if (svc?.duration_minutes) durationMinutes = svc.duration_minutes;
+    if (svc?.square_variation_id) serviceVariationId = svc.square_variation_id;
   }
 
   // Day-of-week windows.
@@ -120,7 +201,7 @@ Deno.serve(async (req) => {
     ...(apptRows ?? []),
   ];
 
-  const slots = generateSlots({
+  const localSlots = generateSlots({
     availability: (availRows ?? []) as StylistAvailabilityRow[],
     blockedTimes,
     durationMinutes,
@@ -128,7 +209,41 @@ Deno.serve(async (req) => {
     weekCount,
   });
 
-  // TODO(square): once linked, intersect `slots` with Square SearchAvailability.
+  // When the seller is connected to Square AND we have a mapped variation, use
+  // Square's REAL availability (its hours, staff schedule, existing bookings) as
+  // the source of truth — that's what the seller manages in Square. We format
+  // Square's slots into the same TimeSlot shape. Fall back to the local slots if
+  // Square isn't connected or the call fails (honest degradation, never empty
+  // when we have a usable local schedule).
+  let slots = localSlots;
+  let source: "square" | "local" = "local";
+  try {
+    const { data: stylist } = await admin
+      .from("stylists")
+      .select("square_location_id, square_team_member_id")
+      .eq("id", stylistId)
+      .maybeSingle();
+    const tok = await ensureFreshSquareToken(admin, stylistId);
+    if (
+      tok.ok && serviceVariationId &&
+      stylist?.square_location_id && stylist?.square_team_member_id
+    ) {
+      const squareSlots = await searchSquareAvailability({
+        accessToken: tok.accessToken,
+        locationId: stylist.square_location_id,
+        teamMemberId: stylist.square_team_member_id,
+        serviceVariationId,
+        rangeStart,
+        rangeEnd,
+      });
+      if (squareSlots.length) {
+        slots = squareSlots;
+        source = "square";
+      }
+    }
+  } catch (e) {
+    console.error("[availability] Square search failed, using local:", (e as Error).name);
+  }
 
-  return jsonResponse({ slots, durationMinutes });
+  return jsonResponse({ slots, durationMinutes, source });
 });

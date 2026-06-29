@@ -37,8 +37,46 @@ export async function listServices(): Promise<Service[]> {
   return (data ?? []) as Service[];
 }
 
+/** Real availability for a service on a day, from the deployed square-availability
+ *  (Square's true open slots when connected; the function falls back to local
+ *  studio hours if Square isn't linked). Returns slots for the given dayKey.
+ *  Falls back to the on-device availableSlots() if the call fails entirely. */
+export async function fetchSlots(
+  service: Service,
+  dayKey: string,
+  appts: Appointment[],
+): Promise<Slot[]> {
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    const res = await fetch(`${FUNCTIONS_URL}/square-availability`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        service_id: service.id,
+        service_variation_id: service.square_variation_id,
+        duration_minutes: service.duration_minutes,
+        week_count: 3,
+      }),
+    });
+    if (!res.ok) throw new Error(String(res.status));
+    const json = await res.json();
+    const all: any[] = json.slots ?? [];
+    return all
+      .filter((s) => s.dateKey === dayKey)
+      .map((s) => ({ startHour: s.hour24 + (Number(s.isoTime?.split(":")[1] ?? 0) / 60), label: s.timeLabel }));
+  } catch {
+    // Honest fallback to the local engine (never leave the user with nothing).
+    return availableSlots(dayKey, service.duration_minutes, appts);
+  }
+}
+
 /** Open start-times for a service on a day, given existing appointments.
- *  Local mirror of square-availability (respects studio hours + conflicts). */
+ *  Local mirror of square-availability (respects studio hours + conflicts).
+ *  Used as the offline fallback for fetchSlots. */
 export function availableSlots(
   dayKey: string,
   durationMin: number,

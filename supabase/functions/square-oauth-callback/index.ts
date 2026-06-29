@@ -133,5 +133,23 @@ Deno.serve(async (req) => {
     return redirectToApp("persist_failed");
   }
 
+  // Auto-sync the seller's catalog + team member + location so the account is
+  // immediately usable (services in the Book sheet, bookable staff). Best-effort
+  // and fire-and-forget-ish: a sync failure shouldn't fail the connect — the
+  // app can resync from Settings. Awaited briefly so most data lands before the
+  // app refreshes on return.
+  try {
+    await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/square-sync`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+      },
+      body: JSON.stringify({ stylist_id: stylistId }),
+    });
+  } catch (e) {
+    console.error("Square post-connect sync failed (non-fatal):", (e as Error).name);
+  }
+
   return redirectToApp("connected");
 });

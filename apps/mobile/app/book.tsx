@@ -6,7 +6,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
 import { Avatar } from "@/components/ui/Avatar";
 import { useAppointments } from "@/lib/useAppointments";
-import { listServices, availableSlots, createBooking, type Service, type Slot } from "@/lib/booking";
+import { listServices, fetchSlots, createBooking, type Service, type Slot } from "@/lib/booking";
 import { dayStrip, weekStart, todayKey, fmtHour } from "@/lib/calendar";
 import { supabase } from "@/lib/supabase";
 import { colors } from "@/theme/colors";
@@ -75,11 +75,19 @@ export default function BookScreen() {
     })();
   }, [params.conversation, params.client]);
 
-  // Drop the slot if the service/day change makes it no longer fit.
-  const slots = useMemo(
-    () => (svc ? availableSlots(dayKey, svc.duration_minutes, appts) : []),
-    [svc, dayKey, appts],
-  );
+  // Real availability from square-availability (Square's true open slots when
+  // connected; local fallback otherwise). Re-fetched when service/day change.
+  const [slots, setSlots] = useState<Slot[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  useEffect(() => {
+    let active = true;
+    if (!svc) { setSlots([]); return; }
+    setSlotsLoading(true);
+    fetchSlots(svc, dayKey, appts).then((s) => {
+      if (active) { setSlots(s); setSlotsLoading(false); }
+    });
+    return () => { active = false; };
+  }, [svc, dayKey, appts]);
   useEffect(() => {
     if (slot && !slots.some((s) => s.startHour === slot.startHour)) setSlot(null);
   }, [slots]);

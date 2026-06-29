@@ -48,3 +48,9 @@ verify_jwt = true
 # nonce (square_oauth_nonce) are the auth/CSRF guard, so verify_jwt=false.
 [functions.square-oauth-callback]
 verify_jwt = false
+
+# square-sync: pulls the seller's catalog/team/location after connect. Called
+# server-to-server by the callback (service-role auth), so verify_jwt=false; it
+# acts only on the stylist_id it's given via their stored Square token.
+[functions.square-sync]
+verify_jwt = false
