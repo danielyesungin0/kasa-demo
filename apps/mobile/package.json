@@ -5,6 +5,7 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start --dev-client --port 8083",
+    "start:clear": "expo start --dev-client --port 8083 --clear",
     "ios": "RCT_METRO_PORT=8083 expo run:ios --port 8083",
     "android": "RCT_METRO_PORT=8083 expo run:android --port 8083",
     "web": "expo start --web",
