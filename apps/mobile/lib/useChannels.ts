@@ -8,6 +8,7 @@
 // and seeds a row for now. All state reads the real tables, never local guesses.
 import { useCallback, useEffect, useState } from "react";
 import * as WebBrowser from "expo-web-browser";
+import * as Linking from "expo-linking";
 import { supabase, FUNCTIONS_URL } from "./supabase";
 
 export type ConnState = "idle" | "connecting" | "connected" | "action_needed";
@@ -84,12 +85,15 @@ export function useChannels(): ChannelsData {
     setConn((c) => ({ ...c, [id]: info }));
 
   // ── connect actions ──
-  // Square: REAL OAuth. Ask square-oauth-start for the authorize URL (it needs
-  // the stylist's session JWT), open it in a browser, and let the callback store
-  // the encrypted tokens + return to the app via kasa://square-connected. On
-  // return we refresh from the stylists row (the source of truth).
+  // Square: REAL OAuth. Get the authorize URL (needs the stylist JWT), open it
+  // in a normal in-app browser tab (openBrowserAsync — handles Square's
+  // cross-domain redirects + cookies/JS, unlike the auth-session sandbox which
+  // rendered blank), and listen for the kasa://square-connected deep link from
+  // the callback. On return we dismiss the browser and refresh from the
+  // stylists row (the callback persists tokens server-side).
   const connectSquare = useCallback(async () => {
     setState("square", { state: "connecting" });
+    let sub: { remove: () => void } | undefined;
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
@@ -104,19 +108,30 @@ export function useChannels(): ChannelsData {
         return setState("square", { state: "idle" });
       }
 
-      const result = await WebBrowser.openAuthSessionAsync(
-        json.authorize_url,
-        "kasa://square-connected",
-      );
-      // Whether success/dismiss, re-read the real state — the callback persists
-      // independently of how the browser closes.
-      if (result.type === "success") {
-        await refresh();
-      } else {
-        setState("square", { state: "idle" });
-      }
+      // Resolve when the callback deep-links back into the app.
+      const returned = new Promise<string>((resolve) => {
+        sub = Linking.addEventListener("url", ({ url }) => {
+          if (url.includes("square-connected")) resolve(url);
+        });
+      });
+
+      await WebBrowser.openBrowserAsync(json.authorize_url, { showInRecents: true });
+      // Wait for the callback's deep link (or a 2-min safety timeout), then
+      // close the browser tab.
+      await Promise.race([
+        returned,
+        new Promise<string>((r) => setTimeout(() => r(""), 120_000)),
+      ]);
+      WebBrowser.dismissBrowser();
+
+      // Either way, re-read truth from the stylists row (no fake state). The
+      // callback persists tokens server-side regardless of how the browser
+      // closed; if it didn't connect, refresh() leaves Square idle.
+      await refresh();
     } catch {
       setState("square", { state: "idle" });
+    } finally {
+      sub?.remove();
     }
   }, [refresh]);
 

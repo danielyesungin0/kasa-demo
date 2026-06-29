@@ -3,8 +3,8 @@
 // "I don't have a Professional account" (IG) and "I don't have a Service
 // Account" (WeChat). The actual external OAuth/QR is a TODO(oauth) seam; the
 // final "Allow / I've authorized" button calls the seed-connect action.
-import { useState } from "react";
-import { View, Pressable, Modal, ScrollView } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { View, Pressable, Modal, ScrollView, Animated, Easing, Dimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
@@ -67,21 +67,53 @@ export function ConnectSheet({
   }
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={close} statusBarTranslucent>
-      {/* Full-screen layer: scrim fills it, sheet pinned to the bottom. The
-          scrim is a background sibling (not a flex child that pushes the sheet),
-          so the whole layer slides as one bottom sheet rather than the scrim
-          floating above it. */}
+    <SheetShell onClose={close} insets={insets}>
+      {provider === "square" && <SquareBody step={step} setStep={setStep} finish={finish} close={close} />}
+      {provider === "instagram" && <IGBody step={step} setStep={setStep} finish={finish} close={close} />}
+      {provider === "wechat" && <WeChatBody step={step} setStep={setStep} finish={finish} close={close} />}
+    </SheetShell>
+  );
+}
+
+// Bottom-sheet shell: Modal with animationType="none" (RN's "slide" animates
+// the WHOLE modal incl. the scrim — that's the bug). We fade the scrim and
+// slide only the sheet via Animated translateY, like a native sheet.
+function SheetShell({
+  children,
+  onClose,
+  insets,
+}: {
+  children: React.ReactNode;
+  onClose: () => void;
+  insets: { bottom: number };
+}) {
+  const screenH = Dimensions.get("window").height;
+  const translateY = useRef(new Animated.Value(screenH)).current;
+  const scrim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(translateY, { toValue: 0, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(scrim, { toValue: 1, duration: 220, easing: Easing.linear, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  function animatedClose() {
+    Animated.parallel([
+      Animated.timing(translateY, { toValue: screenH, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(scrim, { toValue: 0, duration: 200, easing: Easing.linear, useNativeDriver: true }),
+    ]).start(() => onClose());
+  }
+
+  return (
+    <Modal visible transparent animationType="none" onRequestClose={animatedClose} statusBarTranslucent>
       <View style={{ flex: 1, justifyContent: "flex-end" }}>
-        <Pressable
-          style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.4)" }}
-          onPress={close}
-          accessibilityRole="button"
-          accessibilityLabel="Dismiss"
-        />
-        <View
+        <Animated.View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#000", opacity: scrim.interpolate({ inputRange: [0, 1], outputRange: [0, 0.4] }) }}>
+          <Pressable style={{ flex: 1 }} onPress={animatedClose} accessibilityRole="button" accessibilityLabel="Dismiss" />
+        </Animated.View>
+        <Animated.View
           className="rounded-t-sheet bg-surface"
-          style={{ paddingBottom: insets.bottom + 16, maxHeight: "88%" }}
+          style={{ paddingBottom: insets.bottom + 16, maxHeight: "88%", transform: [{ translateY }] }}
         >
           <View className="items-center pt-2.5 pb-1">
             <View className="rounded-full bg-line-2" style={{ width: 38, height: 5 }} />
@@ -91,11 +123,9 @@ export function ConnectSheet({
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            {provider === "square" && <SquareBody step={step} setStep={setStep} finish={finish} close={close} />}
-            {provider === "instagram" && <IGBody step={step} setStep={setStep} finish={finish} close={close} />}
-            {provider === "wechat" && <WeChatBody step={step} setStep={setStep} finish={finish} close={close} />}
+            {children}
           </ScrollView>
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   );
