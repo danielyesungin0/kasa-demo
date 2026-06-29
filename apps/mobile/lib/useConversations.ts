@@ -80,9 +80,15 @@ export function useConversations() {
   }, [reload]);
 
   useEffect(() => {
+    // No session yet → don't fetch or subscribe (RLS would return nothing, and
+    // re-subscribing a same-named channel after subscribe() throws). The effect
+    // re-runs when the session arrives.
+    if (!session) return;
     void reload();
+    // Unique channel name per subscription so a re-run never adds .on() to an
+    // already-subscribed channel ("cannot add postgres_changes after subscribe").
     const channel = supabase
-      .channel("inbox")
+      .channel(`inbox-${Math.random().toString(36).slice(2)}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "messages" },
@@ -98,7 +104,7 @@ export function useConversations() {
       if (reloadTimer.current) clearTimeout(reloadTimer.current);
       supabase.removeChannel(channel);
     };
-  }, [reload, scheduleReload]);
+  }, [session, reload, scheduleReload]);
 
   return { items, loading, reload };
 }

@@ -66,9 +66,10 @@ export function useAppointments() {
   }, [session]);
 
   useEffect(() => {
+    if (!session) return; // wait for auth; avoids empty fetch + channel re-sub
     void reload();
     const channel = supabase
-      .channel("appointments")
+      .channel(`appointments-${Math.random().toString(36).slice(2)}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "appointments" },
@@ -78,7 +79,7 @@ export function useAppointments() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [reload]);
+  }, [session, reload]);
 
   return { items, loading, reload };
 }
