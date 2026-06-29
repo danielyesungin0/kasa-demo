@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { View, Pressable, ScrollView, ActivityIndicator } from "react-native";
+import { View, Pressable, ScrollView, ActivityIndicator, TextInput } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Icon } from "@/components/ui/Icon";
@@ -29,6 +29,7 @@ export default function BookScreen() {
 
   const [client, setClient] = useState<Client | null>(null);
   const [fixedClient, setFixedClient] = useState(false); // came from a conversation
+  const [clientQuery, setClientQuery] = useState("");
   const [svc, setSvc] = useState<Service | null>(null);
   const [pickSvc, setPickSvc] = useState(false);
   const [dayKey, setDayKey] = useState(params.day ?? todayKey());
@@ -39,6 +40,13 @@ export default function BookScreen() {
   const [result, setResult] = useState<{ ok: boolean; error?: string } | null>(null);
 
   const days = useMemo(() => dayStrip(weekStart(todayKey()), 14), []);
+
+  // Filtered client matches for the searchable "For" picker (top 20).
+  const clientMatches = useMemo(() => {
+    const q = clientQuery.trim().toLowerCase();
+    const base = q ? clients.filter((c) => c.name.toLowerCase().includes(q)) : clients;
+    return base.slice(0, 20);
+  }, [clients, clientQuery]);
 
   useEffect(() => {
     (async () => {
@@ -161,7 +169,7 @@ export default function BookScreen() {
       {loading ? (
         <View className="flex-1 items-center justify-center"><ActivityIndicator color={colors.ink4} /></View>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 24 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <ScrollView className="flex-1" contentContainerStyle={{ padding: 20, paddingBottom: 24 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           {/* header */}
           <View className="flex-row items-center self-start rounded-pill bg-plum-soft px-2.5 py-1.5" style={{ gap: 5 }}>
             <Icon name="calendar" size={13} color={colors.plumInk} />
@@ -180,14 +188,38 @@ export default function BookScreen() {
                   <Text className="text-accent-ink" style={{ fontSize: 13, fontFamily: "Inter_600SemiBold" }}>Change</Text>
                 </Pressable>
               ) : (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
-                  {clients.map((c) => (
-                    <Pressable key={c.id} onPress={() => setClient(c)} accessibilityRole="button" className="items-center" style={{ width: 60, gap: 5 }}>
-                      <Avatar name={c.name} size={44} />
-                      <Text numberOfLines={1} className="text-ink-2" style={{ fontSize: 12 }}>{c.name.split(" ")[0]}</Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
+                <View>
+                  {/* Search field — scales to hundreds of clients (no endless
+                      horizontal scroll). Shows top matches as you type. */}
+                  <View className="flex-row items-center rounded-control-lg border border-line-2 bg-surface px-3.5" style={{ height: 48, gap: 8 }}>
+                    <Icon name="search" size={16} color={colors.ink4} />
+                    <TextInput
+                      value={clientQuery}
+                      onChangeText={setClientQuery}
+                      placeholder="Search clients"
+                      placeholderTextColor={colors.ink4}
+                      autoCapitalize="none"
+                      className="flex-1 text-body text-ink"
+                      style={{ fontFamily: "Inter_400Regular", padding: 0 }}
+                    />
+                    {clientQuery ? (
+                      <Pressable onPress={() => setClientQuery("")} hitSlop={8} accessibilityLabel="Clear"><Icon name="x" size={15} color={colors.ink4} /></Pressable>
+                    ) : null}
+                  </View>
+                  <View className="mt-2 overflow-hidden rounded-control-lg border border-line-2 bg-surface">
+                    {clientMatches.length === 0 ? (
+                      <View className="px-4 py-3"><Text className="text-ink-4" style={{ fontSize: 13.5 }}>No matches.</Text></View>
+                    ) : (
+                      clientMatches.map((c, i) => (
+                        <Pressable key={c.id} onPress={() => { setClient(c); setClientQuery(""); }} accessibilityRole="button"
+                          className={`flex-row items-center px-3 py-2.5 ${i > 0 ? "border-t border-line" : ""}`} style={{ gap: 10, minHeight: 48 }}>
+                          <Avatar name={c.name} size={34} />
+                          <Text numberOfLines={1} className="text-ink" style={{ fontSize: 14.5, fontFamily: "Inter_500Medium" }}>{c.name}</Text>
+                        </Pressable>
+                      ))
+                    )}
+                  </View>
+                </View>
               )}
             </View>
           ) : null}

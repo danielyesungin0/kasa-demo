@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Pressable, ScrollView, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { Icon } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
 import { DayGrid } from "@/components/calendar/DayGrid";
@@ -20,7 +20,10 @@ const TAB_BAR_HEIGHT = 60;
 export default function CalendarScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { items, loading } = useAppointments();
+  const { items, loading, reload } = useAppointments();
+  // Refresh whenever the Calendar gains focus (e.g. right after booking) so a
+  // just-created appointment shows without waiting on the Realtime event.
+  useFocusEffect(useCallback(() => { reload(); }, [reload]));
 
   const [view, setView] = useState<View3>("day");
   const [dayKey, setDayKey] = useState(todayKey());

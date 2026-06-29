@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { View, TextInput, Pressable, FlatList, ActivityIndicator } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { Screen } from "@/components/ui/Screen";
 import { Text } from "@/components/ui/Text";
 import { Icon } from "@/components/ui/Icon";
 import { Avatar } from "@/components/ui/Avatar";
@@ -9,9 +9,11 @@ import { useClients, type ClientRow } from "@/lib/useClients";
 import { colors } from "@/theme/colors";
 
 // Clients — searchable list of the real clients table. VIP star on high-value
-// clients; tap → profile (the screen Calendar/Book already link to).
+// clients; tap → profile. Uses a plain View (not Screen/ScrollView) so the
+// FlatList is the only scroller (no nested-VirtualizedList warning).
 export default function ClientsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { items, loading } = useClients();
   const [q, setQ] = useState("");
 
@@ -30,7 +32,7 @@ export default function ClientsScreen() {
   }
 
   return (
-    <Screen>
+    <View className="flex-1 bg-bg" style={{ paddingTop: insets.top }}>
       {/* header */}
       <View className="flex-row items-center px-gutter pb-2 pt-1" style={{ gap: 8 }}>
         <Text variant="title">Clients</Text>
@@ -64,7 +66,7 @@ export default function ClientsScreen() {
         <FlatList
           data={filtered}
           keyExtractor={(c) => c.id}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 76 }}
           keyboardShouldPersistTaps="handled"
           ListEmptyComponent={<View className="px-1 py-8"><Text className="text-ink-3" style={{ fontSize: 13.5 }}>No clients found.</Text></View>}
           renderItem={({ item: c }) => (
@@ -91,6 +93,6 @@ export default function ClientsScreen() {
           )}
         />
       )}
-    </Screen>
+    </View>
   );
 }

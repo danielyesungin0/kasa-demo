@@ -66,7 +66,7 @@ export function useThread(conversationId: string) {
     })();
 
     const channel = supabase
-      .channel(`thread:${conversationId}`)
+      .channel(`thread:${conversationId}:${Math.random().toString(36).slice(2)}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "messages", filter: `conversation_id=eq.${conversationId}` },
