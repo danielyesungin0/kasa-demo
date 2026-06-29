@@ -19,6 +19,7 @@
 
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
 import { createAdminClient } from "../_shared/supabase-admin.ts";
+import { decryptSecret } from "../_shared/crypto.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -107,16 +108,31 @@ Deno.serve(async (req) => {
   return jsonResponse({ ok: true, message_id: msg.id, channel: convo.channel_type });
 });
 
-// Send an Instagram DM via the Meta Graph API. Uses the Page access token (Meta
-// sends IG DMs through the linked Page). recipient.id is the IG-scoped user id
-// we stored as the conversation's external_thread_id. Returns the provider
-// message id on success; an honest error otherwise. Never logs the token.
+// Send an Instagram DM via the Meta Graph API. The Page access token is stored
+// per-stylist (encrypted) on the connected instagram channels row — read+decrypt
+// it (multi-tenant correct), falling back to a global env token if present.
+// recipient.id is the IG-scoped user id stored as conversation.external_thread_id.
 // deno-lint-ignore no-explicit-any
 async function sendInstagram(admin: any, convo: any, text: string): Promise<{ ok: boolean; providerId?: string; error?: string }> {
-  const pageToken = Deno.env.get("META_PAGE_ACCESS_TOKEN");
-  if (!pageToken) return { ok: false, error: "meta_not_configured" };
   const recipientId = convo.external_thread_id;
   if (!recipientId) return { ok: false, error: "no_recipient" };
+
+  let pageToken: string | null = null;
+  const { data: chan } = await admin
+    .from("channels")
+    .select("credentials_ref")
+    .eq("stylist_id", convo.stylist_id)
+    .eq("type", "instagram")
+    .eq("connected", true)
+    .maybeSingle();
+  if (chan?.credentials_ref) {
+    try {
+      const creds = JSON.parse(decryptSecret(chan.credentials_ref) ?? "{}");
+      pageToken = creds.page_access_token ?? null;
+    } catch { /* fall through */ }
+  }
+  pageToken = pageToken ?? Deno.env.get("META_PAGE_ACCESS_TOKEN") ?? null;
+  if (!pageToken) return { ok: false, error: "meta_not_configured" };
 
   try {
     const res = await fetch(

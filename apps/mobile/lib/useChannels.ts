@@ -143,16 +143,56 @@ export function useChannels(): ChannelsData {
 
   const connectChannel = useCallback(async (id: "instagram" | "wechat") => {
     setState(id, { state: "connecting" });
+
+    // Instagram: REAL Meta OAuth (instagram-oauth-start → Meta dialog → callback
+    // stores the encrypted Page token in channels). Mirrors connectSquare. If
+    // Meta isn't configured yet (no META_APP_ID), the start function returns
+    // meta_not_configured and we surface idle (honest — no fake connect).
+    if (id === "instagram") {
+      let sub: { remove: () => void } | undefined;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) return setState(id, { state: "idle" });
+
+        const res = await fetch(`${FUNCTIONS_URL}/instagram-oauth-start`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        });
+        const json = await res.json();
+        if (!res.ok || !json.authorize_url) return setState(id, { state: "idle" });
+
+        const returned = new Promise<string>((resolve) => {
+          sub = Linking.addEventListener("url", ({ url }) => {
+            if (url.includes("instagram-connected")) resolve(url);
+          });
+        });
+        await Promise.race([
+          WebBrowser.openAuthSessionAsync(json.authorize_url, "kasa://instagram-connected"),
+          returned,
+          new Promise<string>((r) => { timer = setTimeout(() => r(""), 90_000); }),
+        ]);
+        await refresh();
+      } catch {
+        setState(id, { state: "idle" });
+      } finally {
+        sub?.remove();
+        if (timer) clearTimeout(timer);
+      }
+      return;
+    }
+
+    // WeChat: still seeds a row (real WeChat OAuth/QR is a later chunk).
     const stylistId = await getStylistId();
     if (!stylistId) return setState(id, { state: "idle" });
-    const label = id === "instagram" ? "@shen.hair · pro account" : "Shen Hair Studio 公众号";
     await supabase.from("channels").upsert(
       {
         stylist_id: stylistId,
         type: id,
         connected: true,
         status: "connected",
-        external_account_id: label,
+        external_account_id: "Shen Hair Studio 公众号",
       },
       { onConflict: "stylist_id,type" },
     );

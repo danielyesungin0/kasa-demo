@@ -202,35 +202,21 @@ function IGBody({ step, setStep, finish, close }: any) {
             You can only reply within 24 hours of a client's last message — Meta's rule, shown in each thread.
           </Text>
         </View>
-        <PrimaryBtn label="Continue with Facebook" onPress={() => setStep(1)} />
+        {/* Real Meta OAuth: finish() triggers connectChannel('instagram') which
+            opens Meta's actual login/permission page in a browser and connects
+            the account you pick there (e.g. indesign labs). No fake picker. */}
+        <PrimaryBtn label="Continue with Facebook" onPress={finish} />
         <Pressable onPress={() => setStep(99)} className="mt-3 items-center"><Text className="text-accent-ink" style={{ fontSize: 13.5, fontFamily: "Inter_600SemiBold" }}>I don't have a Professional account</Text></Pressable>
+        <Text className="mt-3 text-center text-ink-4" style={{ fontSize: 12, lineHeight: 17 }}>
+          Opens Instagram/Facebook to sign in and pick your account.
+        </Text>
       </View>
     );
   }
   return (
     <View>
-      <Text variant="title">Choose account</Text>
-      <View className="mt-2 rounded-card border border-line-2 bg-surface p-4">
-        <View className="flex-row items-center border-b border-line pb-3" style={{ gap: 8 }}>
-          <Icon name="link" size={12} color={colors.ink4} />
-          <Text className="text-ink-3" style={{ fontSize: 12, fontFamily: "Inter_600SemiBold" }}>facebook.com</Text>
-        </View>
-        <Pressable onPress={finish} className="mt-3 flex-row items-center rounded-control border border-line-2 p-3" style={{ gap: 11 }}>
-          <View className="items-center justify-center rounded-control" style={{ width: 38, height: 38, backgroundColor: colors.accentSoft }}>
-            <Icon name="user" size={18} color={colors.accent} />
-          </View>
-          <View className="flex-1">
-            <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.ink }}>@shen.hair</Text>
-            <Text className="text-ink-3" style={{ fontSize: 12.5 }}>Shen's Studio · Page linked</Text>
-          </View>
-          <Icon name="chevR" size={16} color={colors.ink4} />
-        </Pressable>
-        <Pressable onPress={close} className="mt-3 items-center"><Text className="text-accent-ink" style={{ fontSize: 13.5, fontFamily: "Inter_600SemiBold" }}>Cancel</Text></Pressable>
-      </View>
-      <Text className="mt-3 text-center text-ink-4" style={{ fontSize: 12.5, lineHeight: 18 }}>
-        {/* TODO(oauth): real Meta permission screen, gated on App Review. */}
-        In production this is Meta's permission screen — gated on Meta App Review.
-      </Text>
+      <Text variant="title">Connecting…</Text>
+      <Text variant="body" className="mt-2 text-ink-3">Finish signing in with Meta in the browser. You'll come right back.</Text>
     </View>
   );
 }

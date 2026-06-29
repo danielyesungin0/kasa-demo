@@ -54,3 +54,12 @@ verify_jwt = false
 # acts only on the stylist_id it's given via their stored Square token.
 [functions.square-sync]
 verify_jwt = false
+
+# instagram-oauth-start: authenticated stylist begins the Meta connect flow.
+[functions.instagram-oauth-start]
+verify_jwt = true
+
+# instagram-oauth-callback: Meta redirects the seller's browser here — no app JWT
+# on the redirect; signed state + one-time nonce are the auth/CSRF guard.
+[functions.instagram-oauth-callback]
+verify_jwt = false
