@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { View, Pressable, ScrollView, RefreshControl } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Screen } from "@/components/ui/Screen";
 import { Text } from "@/components/ui/Text";
@@ -16,8 +17,11 @@ import { colors } from "@/theme/colors";
 // Today — the home screen. Fraunces greeting, today's schedule (same source as
 // Calendar: real appointments), and new (unread) messages. Both blocks link
 // into the live screens. No fabricated counts — everything reads real data.
+const TAB_BAR_HEIGHT = 60;
+
 export default function TodayScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { items: convos, loading: convosLoading, reload: reloadConvos } = useConversations();
   const { items: appts, loading: apptsLoading, reload: reloadAppts } = useAppointments();
   const [refreshing, setRefreshing] = useState(false);
@@ -42,10 +46,11 @@ export default function TodayScreen() {
   const greeting = hr < 12 ? "Good morning" : hr < 17 ? "Good afternoon" : "Good evening";
 
   return (
-    <Screen>
+    <Screen scroll={false}>
       <ScrollView
+        className="flex-1"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 24 }}
+        contentContainerStyle={{ paddingTop: 8, paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 12 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.ink4} />}
       >
         {/* hero */}

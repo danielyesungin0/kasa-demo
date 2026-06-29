@@ -49,6 +49,7 @@ export default function BookScreen() {
 
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; error?: string } | null>(null);
+  const [footerH, setFooterH] = useState(180); // measured; pads scroll so content clears the sticky footer
 
   const days = useMemo(() => dayStrip(weekStart(todayKey()), 14), []);
 
@@ -58,8 +59,15 @@ export default function BookScreen() {
     return base.slice(0, 20);
   }, [clients, clientQuery]);
 
-  // Dismiss = close the sheet, then pop the route (gorhom animates down first).
-  const close = useCallback(() => router.back(), [router]);
+  // Dismiss = pop the route. Guard against double-fire (pan-down close AND
+  // backdrop press can both call onClose → a second back() pops the thread too,
+  // leaving a blank screen).
+  const closedRef = useRef(false);
+  const close = useCallback(() => {
+    if (closedRef.current) return;
+    closedRef.current = true;
+    router.back();
+  }, [router]);
 
   useEffect(() => {
     (async () => {
@@ -151,7 +159,7 @@ export default function BookScreen() {
       if (loading || result) return null;
       return (
         <BottomSheetFooter {...props} bottomInset={insets.bottom}>
-          <View className="border-t border-line bg-bg px-5 pt-3 pb-3">
+          <View onLayout={(e) => setFooterH(e.nativeEvent.layout.height)} className="border-t border-line bg-bg px-5 pt-3 pb-3">
             <Text className={ready ? "text-ink-2" : "text-ink-4"} style={{ fontSize: 13, marginBottom: 8, textAlign: "center" }}>
               {ready && svc && slot
                 ? `${days.find((d) => d.key === dayKey)?.dow} ${days.find((d) => d.key === dayKey)?.n} · ${slot.label} · ${svc.name}`
@@ -215,7 +223,7 @@ export default function BookScreen() {
       ) : loading ? (
         <View className="flex-1 items-center justify-center"><ActivityIndicator color={colors.ink4} /></View>
       ) : (
-        <BottomSheetScrollView contentContainerStyle={{ padding: 20, paddingTop: 4, paddingBottom: 220 }} keyboardShouldPersistTaps="handled">
+        <BottomSheetScrollView contentContainerStyle={{ padding: 20, paddingTop: 4, paddingBottom: footerH + insets.bottom + 24 }} keyboardShouldPersistTaps="handled">
           {/* header */}
           <View className="flex-row items-center self-start rounded-pill bg-plum-soft px-2.5 py-1.5" style={{ gap: 5 }}>
             <Icon name="calendar" size={13} color={colors.plumInk} />

@@ -31,7 +31,6 @@ export default function ThreadScreen() {
   const listRef = useRef<FlatList>(null);
   // Measure the real header height so KeyboardAvoidingView's offset is exact
   // (a hardcoded guess left a gap between the keyboard and the input).
-  const [headerH, setHeaderH] = useState(0);
 
   const { convo, messages, loading, appendOptimistic, reconcile, dropOptimistic } =
     useThread(id);
@@ -108,9 +107,14 @@ export default function ThreadScreen() {
     shouldShowNudge(convo.intent, convo.intent_payload);
 
   return (
-    <View className="flex-1 bg-bg" style={{ paddingTop: insets.top }}>
+    <KeyboardAvoidingView
+      className="flex-1 bg-bg"
+      style={{ paddingTop: insets.top }}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={0}
+    >
       {/* nav header: back · tappable name→profile · client-details */}
-      <View onLayout={(e) => setHeaderH(e.nativeEvent.layout.height)} className="flex-row items-center border-b border-line px-3.5" style={{ minHeight: 54, gap: 8, paddingVertical: 9 }}>
+      <View className="flex-row items-center border-b border-line px-3.5" style={{ minHeight: 54, gap: 8, paddingVertical: 9 }}>
         <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Back" className="items-center justify-center rounded-full active:bg-bg-warm" style={{ width: 42, height: 42 }}>
           <Icon name="back" size={22} color={colors.ink} />
         </Pressable>
@@ -139,11 +143,7 @@ export default function ThreadScreen() {
         </Pressable>
       </View>
 
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={insets.top + headerH}
-      >
+      <View className="flex-1">
         <FlatList
           ref={listRef}
           data={messages}
@@ -196,7 +196,7 @@ export default function ThreadScreen() {
           onOpenExternal={openExternal}
           initialDraft={draft ?? null}
         />
-      </KeyboardAvoidingView>
-    </View>
+      </View>
+    </KeyboardAvoidingView>
   );
 }

@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Icon } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { InboxRow } from "@/components/inbox/InboxRow";
 import { useConversations } from "@/lib/useConversations";
 import { supabase } from "@/lib/supabase";
@@ -112,8 +113,16 @@ export default function InboxScreen() {
 
       {/* list (virtualized) */}
       {loading ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color={colors.ink4} />
+        <View className="bg-surface" style={{ paddingTop: 6 }}>
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <View key={i} className="flex-row items-center" style={{ paddingVertical: 14, paddingLeft: 32, paddingRight: 18, gap: 8, minHeight: 72 }}>
+              <Skeleton width={48} height={48} radius={24} />
+              <View style={{ flex: 1, gap: 7 }}>
+                <Skeleton width={"45%"} height={14} radius={7} />
+                <Skeleton width={"80%"} height={12} radius={6} />
+              </View>
+            </View>
+          ))}
         </View>
       ) : list.length === 0 ? (
         <View className="flex-1 items-center justify-center" style={{ gap: 11, padding: 30 }}>
