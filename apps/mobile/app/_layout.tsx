@@ -95,7 +95,15 @@ export default function RootLayout() {
               <Stack.Screen name="thread/[id]" />
               <Stack.Screen name="client/[id]" />
               <Stack.Screen name="settings/channels" />
-              <Stack.Screen name="book" options={{ presentation: "modal" }} />
+              <Stack.Screen
+                name="book"
+                options={{
+                  presentation: "formSheet",
+                  sheetGrabberVisible: true,
+                  sheetAllowedDetents: [0.9],
+                  sheetCornerRadius: 22,
+                }}
+              />
             </Stack>
           </Guard>
         </AuthProvider>

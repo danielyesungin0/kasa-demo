@@ -59,12 +59,21 @@ export default function BookScreen() {
           .maybeSingle();
         const c = (conv as any)?.client;
         if (c) { setClient(c); setFixedClient(true); }
+        // Prefill the service from the AI's guess (intent_payload.service_guess
+        // | service). Fuzzy: exact key/name, else a word-overlap match so
+        // "haircut" → "Short Hair Cut". Time is NOT auto-picked (guardrail —
+        // the stylist confirms the slot).
         const payload = (conv as any)?.intent_payload;
-        if (payload?.service) {
-          const match = svcs.find(
-            (s) => s.name.toLowerCase() === String(payload.service).toLowerCase() ||
-                   s.service_key === payload.service,
-          );
+        const guess = String(payload?.service_guess ?? payload?.service ?? "").toLowerCase().trim();
+        if (guess) {
+          const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
+          const gWords = guess.replace(/[^a-z ]/g, "").split(/\s+/).filter(Boolean);
+          const match =
+            svcs.find((s) => norm(s.name) === norm(guess) || s.service_key === guess) ||
+            svcs.find((s) => {
+              const n = s.name.toLowerCase();
+              return gWords.some((w) => n.includes(w)) || guess.includes(s.service_key);
+            });
           if (match) setSvc(match);
         }
       } else if (params.client) {
@@ -119,10 +128,9 @@ export default function BookScreen() {
 
   return (
     <View className="flex-1 bg-bg">
-      {/* grabber + close */}
-      <View className="flex-row items-center justify-between px-4 pt-3" style={{ paddingTop: insets.top + 8 }}>
-        <View style={{ width: 44 }} />
-        <View className="rounded-full bg-line-2" style={{ width: 38, height: 5 }} />
+      {/* Close button only — the native formSheet provides the grabber + rounded
+          top, so no fake handle or top inset here. */}
+      <View className="flex-row items-center justify-end px-3 pt-2">
         <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Close" className="items-center justify-center" style={{ width: 44, height: 44 }}>
           <Icon name="x" size={22} color={colors.ink3} />
         </Pressable>
@@ -215,25 +223,34 @@ export default function BookScreen() {
             </Text>
             {!svc ? (
               <Text className="text-ink-3" style={{ fontSize: 13.5 }}>Pick a service first so times fit around your day.</Text>
+            ) : slotsLoading ? (
+              <View className="flex-row items-center py-3" style={{ gap: 8 }}>
+                <ActivityIndicator size="small" color={colors.ink4} />
+                <Text className="text-ink-4" style={{ fontSize: 13 }}>Checking Square availability…</Text>
+              </View>
+            ) : slots.length === 0 ? (
+              <Text className="text-ink-3 py-2" style={{ fontSize: 13.5, lineHeight: 19 }}>
+                No openings this day. Try another day above.
+              </Text>
             ) : (
-              groups.map(([label, gslots]) => (
-                <View key={label} className="mb-3">
-                  <Text className="mb-1.5 text-ink-3" style={{ fontSize: 12.5, fontFamily: "Inter_600SemiBold" }}>
-                    {label}{gslots.length === 0 ? " · none free" : ""}
-                  </Text>
-                  <View className="flex-row flex-wrap" style={{ gap: 8 }}>
-                    {gslots.map((s) => {
-                      const on = slot?.startHour === s.startHour;
-                      return (
-                        <Pressable key={s.startHour} onPress={() => setSlot(s)} accessibilityRole="button" accessibilityState={on ? { selected: true } : {}}
-                          className={`items-center justify-center rounded-control border ${on ? "border-plum-strong bg-plum-strong" : "border-line-2 bg-surface"}`} style={{ minHeight: 44, paddingHorizontal: 14 }}>
-                          <Text style={{ fontSize: 13.5, fontFamily: "Inter_600SemiBold", color: on ? "#fff" : colors.ink }}>{s.label}</Text>
-                        </Pressable>
-                      );
-                    })}
+              groups
+                .filter(([, gslots]) => gslots.length > 0)
+                .map(([label, gslots]) => (
+                  <View key={label} className="mb-3">
+                    <Text className="mb-1.5 text-ink-3" style={{ fontSize: 12.5, fontFamily: "Inter_600SemiBold" }}>{label}</Text>
+                    <View className="flex-row flex-wrap" style={{ gap: 8 }}>
+                      {gslots.map((s) => {
+                        const on = slot?.startHour === s.startHour;
+                        return (
+                          <Pressable key={s.startHour} onPress={() => setSlot(s)} accessibilityRole="button" accessibilityState={on ? { selected: true } : {}}
+                            className={`items-center justify-center rounded-control border ${on ? "border-plum-strong bg-plum-strong" : "border-line-2 bg-surface"}`} style={{ minHeight: 44, paddingHorizontal: 14 }}>
+                            <Text style={{ fontSize: 13.5, fontFamily: "Inter_600SemiBold", color: on ? "#fff" : colors.ink }}>{s.label}</Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
                   </View>
-                </View>
-              ))
+                ))
             )}
           </View>
         </ScrollView>
