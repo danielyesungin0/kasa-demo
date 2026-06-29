@@ -15,17 +15,12 @@ import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { type InboundMessage, normalizeInbound } from "../_shared/inbound.ts";
 
-// Verify Meta's X-Hub-Signature-256: HMAC-SHA256 of the RAW request body keyed
-// by META_APP_SECRET, compared to the "sha256=..." header. Must run on the raw
-// bytes (any re-serialization breaks the hash). Timing-safe compare.
-async function verifyMetaSignature(
-  rawBody: string,
-  header: string | null,
-): Promise<boolean> {
-  const secret = Deno.env.get("META_APP_SECRET");
-  if (!secret || !header) return false;
-  const expected = header.startsWith("sha256=") ? header.slice(7) : header;
-
+// Verify the X-Hub-Signature-256: HMAC-SHA256 of the RAW body keyed by the app
+// secret, compared to "sha256=...". Instagram Business Login webhooks are signed
+// with INSTAGRAM_APP_SECRET; classic Meta/Page webhooks with META_APP_SECRET —
+// accept either so the source can be either configuration. Must run on the raw
+// bytes; timing-safe compare.
+async function hmacHex(secret: string, rawBody: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(secret),
@@ -33,22 +28,31 @@ async function verifyMetaSignature(
     false,
     ["sign"],
   );
-  const sigBuf = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(rawBody),
-  );
-  const actual = [...new Uint8Array(sigBuf)]
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  const sigBuf = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody));
+  return [...new Uint8Array(sigBuf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
-  // Constant-time comparison.
-  if (actual.length !== expected.length) return false;
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
   let diff = 0;
-  for (let i = 0; i < actual.length; i++) {
-    diff |= actual.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
+}
+
+async function verifyMetaSignature(
+  rawBody: string,
+  header: string | null,
+): Promise<boolean> {
+  if (!header) return false;
+  const expected = header.startsWith("sha256=") ? header.slice(7) : header;
+  const secrets = [
+    Deno.env.get("INSTAGRAM_APP_SECRET"),
+    Deno.env.get("META_APP_SECRET"),
+  ].filter((s): s is string => Boolean(s));
+  for (const secret of secrets) {
+    if (timingSafeEqual(await hmacHex(secret, rawBody), expected)) return true;
+  }
+  return false;
 }
 
 /** Parse a Meta messaging webhook body into zero or more InboundMessages. */
@@ -118,7 +122,9 @@ Deno.serve(async (req) => {
   // any POST that fails signature verification — that's a forged/replayed call.
   // Before the secret is set (local dev w/ simulated payloads), allow through so
   // the pipeline is testable; those are flagged signatureVerified=false.
-  const secretConfigured = Boolean(Deno.env.get("META_APP_SECRET"));
+  const secretConfigured = Boolean(
+    Deno.env.get("INSTAGRAM_APP_SECRET") || Deno.env.get("META_APP_SECRET"),
+  );
   if (secretConfigured && !signatureVerified) {
     return jsonResponse({ error: "invalid_signature" }, 401);
   }
