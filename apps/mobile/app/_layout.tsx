@@ -34,10 +34,17 @@ function Guard({ children }: { children: React.ReactNode }) {
   const segments = useSegments();
   const router = useRouter();
 
+  // Re-check the gate whenever navigation changes (e.g. tapping "Enter Kasa"
+  // after connecting a channel). Without this the gate was computed once on
+  // mount and went stale, so the guard bounced the user back to onboarding.
+  const group = segments[0];
+  useEffect(() => {
+    if (session) gate.refresh();
+  }, [group, session]);
+
   useEffect(() => {
     if (authLoading || (session && gate.loading)) return;
 
-    const group = segments[0]; // "(auth)" | "(onboarding)" | "(tabs)" | ...
     const inAuth = group === "(auth)";
     const inOnboarding = group === "(onboarding)";
 
@@ -49,7 +56,7 @@ function Guard({ children }: { children: React.ReactNode }) {
       // Signed in + ready: keep them out of auth/onboarding entry screens.
       if (inAuth || inOnboarding) router.replace("/(tabs)");
     }
-  }, [session, authLoading, gate.ready, gate.loading, segments, router]);
+  }, [session, authLoading, gate.ready, gate.loading, group, router]);
 
   return <>{children}</>;
 }
