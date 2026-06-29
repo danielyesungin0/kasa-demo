@@ -3,11 +3,12 @@
 //   - Square  → the stylist row's square_merchant_id / square_location_name
 //   - channels→ rows in `channels` (type, connected, status)
 //
-// External OAuth is a Phase-4 TODO(oauth) seam. For now, "connect" SEEDS a real
-// row (channels) / sets the stylist's Square fields so the gate + downstream UI
-// are exercised end-to-end. Real status vocabulary incl. action-needed.
+// Square uses REAL OAuth (square-oauth-start → Square authorize → callback
+// stores encrypted tokens). Instagram/WeChat OAuth is still a TODO(oauth) seam
+// and seeds a row for now. All state reads the real tables, never local guesses.
 import { useCallback, useEffect, useState } from "react";
-import { supabase } from "./supabase";
+import * as WebBrowser from "expo-web-browser";
+import { supabase, FUNCTIONS_URL } from "./supabase";
 
 export type ConnState = "idle" | "connecting" | "connected" | "action_needed";
 
@@ -83,23 +84,40 @@ export function useChannels(): ChannelsData {
     setConn((c) => ({ ...c, [id]: info }));
 
   // ── connect actions ──
-  // TODO(oauth): replace each of these with the real platform OAuth (Square
-  // authorize / Meta Login / WeChat QR) in Phase 4. For now they seed a real
-  // connected row so the gate + Settings reflect a true persisted connection.
+  // Square: REAL OAuth. Ask square-oauth-start for the authorize URL (it needs
+  // the stylist's session JWT), open it in a browser, and let the callback store
+  // the encrypted tokens + return to the app via kasa://square-connected. On
+  // return we refresh from the stylists row (the source of truth).
   const connectSquare = useCallback(async () => {
     setState("square", { state: "connecting" });
-    const id = await getStylistId();
-    if (!id) return setState("square", { state: "idle" });
-    await supabase
-      .from("stylists")
-      .update({
-        // Sandbox placeholder identifiers (no real token; Phase-4 OAuth fills these).
-        square_merchant_id: "SANDBOX_MERCHANT",
-        square_location_name: "Greene St Studio (sandbox)",
-        last_synced_at: new Date().toISOString(),
-      })
-      .eq("id", id);
-    await refresh();
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) return setState("square", { state: "idle" });
+
+      const res = await fetch(`${FUNCTIONS_URL}/square-oauth-start`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      });
+      const json = await res.json();
+      if (!res.ok || !json.authorize_url) {
+        return setState("square", { state: "idle" });
+      }
+
+      const result = await WebBrowser.openAuthSessionAsync(
+        json.authorize_url,
+        "kasa://square-connected",
+      );
+      // Whether success/dismiss, re-read the real state — the callback persists
+      // independently of how the browser closes.
+      if (result.type === "success") {
+        await refresh();
+      } else {
+        setState("square", { state: "idle" });
+      }
+    } catch {
+      setState("square", { state: "idle" });
+    }
   }, [refresh]);
 
   const connectChannel = useCallback(async (id: "instagram" | "wechat") => {
