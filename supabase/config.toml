@@ -37,3 +37,14 @@ verify_jwt = false
 # send-message acts on the stylist's behalf — authenticated session required.
 [functions.send-message]
 verify_jwt = true
+
+# square-oauth-start: begins the connect flow for the authenticated stylist —
+# only a signed-in stylist can link her own Square. Needs SQUARE_APPLICATION_ID.
+[functions.square-oauth-start]
+verify_jwt = true
+
+# square-oauth-callback: Square redirects the seller's browser here after
+# authorize — there is no app JWT on that redirect. The signed state + one-time
+# nonce (square_oauth_nonce) are the auth/CSRF guard, so verify_jwt=false.
+[functions.square-oauth-callback]
+verify_jwt = false
