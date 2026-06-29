@@ -14,6 +14,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Avatar } from "@/components/ui/Avatar";
 import { ChannelDot } from "@/components/ui/ChannelDot";
 import { Text } from "@/components/ui/Text";
+import { Skeleton, ThreadSkeleton } from "@/components/ui/Skeleton";
 import { Composer } from "@/components/thread/Composer";
 import { MessageBubble } from "@/components/thread/MessageBubble";
 import { BookingNudge, shouldShowNudge } from "@/components/thread/BookingNudge";
@@ -81,8 +82,16 @@ export default function ThreadScreen() {
 
   if (loading || !convo) {
     return (
-      <View className="flex-1 items-center justify-center bg-bg" style={{ paddingTop: insets.top }}>
-        <ActivityIndicator color={colors.ink4} />
+      <View className="flex-1 bg-bg" style={{ paddingTop: insets.top }}>
+        {/* minimal header (back) + a chat skeleton instead of a blank screen */}
+        <View className="flex-row items-center border-b border-line px-3.5" style={{ minHeight: 54, gap: 8, paddingVertical: 9 }}>
+          <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Back" className="items-center justify-center rounded-full active:bg-bg-warm" style={{ width: 42, height: 42 }}>
+            <Icon name="back" size={22} color={colors.ink} />
+          </Pressable>
+          <Skeleton width={32} height={32} radius={16} />
+          <Skeleton width={120} height={14} radius={7} />
+        </View>
+        <ThreadSkeleton />
       </View>
     );
   }

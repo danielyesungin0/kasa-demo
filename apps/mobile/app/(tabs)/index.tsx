@@ -1,8 +1,9 @@
-import { useMemo } from "react";
-import { View, Pressable, ScrollView } from "react-native";
+import { useMemo, useState } from "react";
+import { View, Pressable, ScrollView, RefreshControl } from "react-native";
 import { useRouter } from "expo-router";
 import { Screen } from "@/components/ui/Screen";
 import { Text } from "@/components/ui/Text";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { Icon } from "@/components/ui/Icon";
 import { Avatar } from "@/components/ui/Avatar";
 import { ChannelDot } from "@/components/ui/ChannelDot";
@@ -17,8 +18,15 @@ import { colors } from "@/theme/colors";
 // into the live screens. No fabricated counts — everything reads real data.
 export default function TodayScreen() {
   const router = useRouter();
-  const { items: convos } = useConversations();
-  const { items: appts } = useAppointments();
+  const { items: convos, loading: convosLoading, reload: reloadConvos } = useConversations();
+  const { items: appts, loading: apptsLoading, reload: reloadAppts } = useAppointments();
+  const [refreshing, setRefreshing] = useState(false);
+  const firstLoading = convosLoading || apptsLoading;
+  async function onRefresh() {
+    setRefreshing(true);
+    await Promise.all([reloadConvos(), reloadAppts()]);
+    setRefreshing(false);
+  }
 
   const tKey = todayKey();
   const todays = useMemo(
@@ -35,7 +43,11 @@ export default function TodayScreen() {
 
   return (
     <Screen>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 24 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.ink4} />}
+      >
         {/* hero */}
         <View className="px-gutter pt-2">
           <View className="flex-row items-start justify-between">
@@ -59,7 +71,19 @@ export default function TodayScreen() {
             </Pressable>
           </View>
           <View className="overflow-hidden rounded-card border border-line bg-surface">
-            {todays.length === 0 ? (
+            {firstLoading ? (
+              <View className="px-4 py-4" style={{ gap: 14 }}>
+                {[0, 1].map((i) => (
+                  <View key={i} className="flex-row items-center" style={{ gap: 12 }}>
+                    <Skeleton width={56} height={13} radius={6} />
+                    <View style={{ flex: 1, gap: 6 }}>
+                      <Skeleton width={"60%"} height={14} radius={7} />
+                      <Skeleton width={"40%"} height={11} radius={6} />
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : todays.length === 0 ? (
               <View className="px-4 py-5"><Text className="text-ink-3" style={{ fontSize: 13.5 }}>No appointments today.</Text></View>
             ) : (
               todays.map((a, i) => (
@@ -97,7 +121,19 @@ export default function TodayScreen() {
             </Pressable>
           </View>
           <View className="overflow-hidden rounded-card border border-line bg-surface">
-            {unread.length === 0 ? (
+            {firstLoading ? (
+              <View className="px-4 py-4" style={{ gap: 14 }}>
+                {[0, 1, 2].map((i) => (
+                  <View key={i} className="flex-row items-center" style={{ gap: 12 }}>
+                    <Skeleton width={40} height={40} radius={20} />
+                    <View style={{ flex: 1, gap: 6 }}>
+                      <Skeleton width={"50%"} height={13} radius={6} />
+                      <Skeleton width={"75%"} height={11} radius={6} />
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : unread.length === 0 ? (
               <View className="flex-row items-center px-4 py-5" style={{ gap: 8 }}>
                 <Icon name="checkCircle" size={17} color={colors.ok} />
                 <Text className="text-ink-3" style={{ fontSize: 13.5 }}>You're all caught up.</Text>
