@@ -4,9 +4,9 @@
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
-    "start": "expo start",
-    "ios": "expo run:ios",
-    "android": "expo run:android",
+    "start": "expo start --dev-client --port 8083",
+    "ios": "RCT_METRO_PORT=8083 expo run:ios --port 8083",
+    "android": "RCT_METRO_PORT=8083 expo run:android --port 8083",
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit"
