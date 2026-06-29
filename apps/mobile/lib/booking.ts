@@ -98,12 +98,13 @@ export async function fetchAllSlots(service: Service): Promise<Record<string, Sl
     const json = await res.json();
     const all: any[] = json.slots ?? [];
     const byDay: Record<string, Slot[]> = {};
+    const seen: Record<string, Set<number>> = {}; // dedupe per day by startHour
     for (const s of all) {
-      const slot: Slot = {
-        startHour: s.hour24 + (Number(s.isoTime?.split(":")[1] ?? 0) / 60),
-        label: s.timeLabel,
-      };
-      (byDay[s.dateKey] ??= []).push(slot);
+      const startHour = s.hour24 + (Number(s.isoTime?.split(":")[1] ?? 0) / 60);
+      (seen[s.dateKey] ??= new Set());
+      if (seen[s.dateKey].has(startHour)) continue; // Square can return dup starts
+      seen[s.dateKey].add(startHour);
+      (byDay[s.dateKey] ??= []).push({ startHour, label: s.timeLabel });
     }
     return byDay;
   } catch {

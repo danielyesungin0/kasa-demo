@@ -42,15 +42,32 @@ export function useAppointments() {
 
   const reload = useCallback(async () => {
     if (!session) return; // wait for auth; RLS returns nothing otherwise
-    const { data } = await supabase
+    // NOTE: do NOT embed provider_services here — appointments.service_id is
+    // text (legacy) with no FK to provider_services.id (uuid), so PostgREST
+    // can't join it and the WHOLE query errors (PGRST200) → empty calendar.
+    // Join only clients (real FK); resolve service names separately.
+    const { data, error } = await supabase
       .from("appointments")
-      .select(
-        "id, client_id, service_id, starts_at, ends_at, status, source, " +
-          "client:clients(name), service:provider_services(name)",
-      )
+      .select("id, client_id, service_id, service_name, starts_at, ends_at, status, source, client:clients(name)")
       .neq("status", "canceled")
       .order("starts_at", { ascending: true });
-    const mapped: Appointment[] = (data ?? []).map((a: any) => ({
+    if (error) {
+      console.error("[useAppointments] load failed:", error.message);
+      setLoading(false);
+      return;
+    }
+    const rows = data ?? [];
+
+    // Map service_id (uuid stored as text) → name from provider_services.
+    const svcIds = Array.from(new Set(rows.map((a: any) => a.service_id).filter(Boolean)));
+    const svcName = new Map<string, string>();
+    if (svcIds.length) {
+      const { data: svcs } = await supabase
+        .from("provider_services").select("id, name").in("id", svcIds);
+      for (const s of (svcs ?? []) as any[]) svcName.set(s.id, s.name);
+    }
+
+    const mapped: Appointment[] = rows.map((a: any) => ({
       id: a.id,
       client_id: a.client_id,
       service_id: a.service_id,
@@ -59,7 +76,8 @@ export function useAppointments() {
       status: a.status,
       source: a.source,
       clientName: a.client?.name ?? "Client",
-      serviceName: a.service?.name ?? null,
+      // prefer the live catalog name, else the denormalized one stored at booking
+      serviceName: (a.service_id && svcName.get(a.service_id)) || a.service_name || null,
     }));
     setItems(mapped);
     setLoading(false);

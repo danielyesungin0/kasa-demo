@@ -30,6 +30,7 @@ export default function BookScreen() {
   const [client, setClient] = useState<Client | null>(null);
   const [fixedClient, setFixedClient] = useState(false); // came from a conversation
   const [clientQuery, setClientQuery] = useState("");
+  const [clientFocused, setClientFocused] = useState(false);
   const [svc, setSvc] = useState<Service | null>(null);
   const [pickSvc, setPickSvc] = useState(false);
   const [dayKey, setDayKey] = useState(params.day ?? todayKey());
@@ -158,18 +159,12 @@ export default function BookScreen() {
     // wrapping everything in one non-collapsable root removes the "expects at
     // most 2 subviews" warning and keeps the pinned Confirm bar laid out right.
     <View className="flex-1 bg-bg" collapsable={false}>
-      {/* Close button only — the native formSheet provides the grabber + rounded
-          top, so no fake handle or top inset here. */}
-      <View className="flex-row items-center justify-end px-3 pt-2">
-        <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Close" className="items-center justify-center" style={{ width: 44, height: 44 }}>
-          <Icon name="x" size={22} color={colors.ink3} />
-        </Pressable>
-      </View>
-
+      {/* No X — the native formSheet dismisses by dragging down or tapping the
+          backdrop (the grabber is provided by the sheet). */}
       {loading ? (
         <View className="flex-1 items-center justify-center"><ActivityIndicator color={colors.ink4} /></View>
       ) : (
-        <ScrollView className="flex-1" contentContainerStyle={{ padding: 20, paddingBottom: 24 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <ScrollView className="flex-1" contentContainerStyle={{ padding: 20, paddingTop: 16, paddingBottom: insets.bottom + 28 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           {/* header */}
           <View className="flex-row items-center self-start rounded-pill bg-plum-soft px-2.5 py-1.5" style={{ gap: 5 }}>
             <Icon name="calendar" size={13} color={colors.plumInk} />
@@ -189,13 +184,14 @@ export default function BookScreen() {
                 </Pressable>
               ) : (
                 <View>
-                  {/* Search field — scales to hundreds of clients (no endless
-                      horizontal scroll). Shows top matches as you type. */}
+                  {/* Search box with a dropdown of matches (appears on focus or
+                      while typing). Scales to many clients — no giant list. */}
                   <View className="flex-row items-center rounded-control-lg border border-line-2 bg-surface px-3.5" style={{ height: 48, gap: 8 }}>
                     <Icon name="search" size={16} color={colors.ink4} />
                     <TextInput
                       value={clientQuery}
                       onChangeText={setClientQuery}
+                      onFocus={() => setClientFocused(true)}
                       placeholder="Search clients"
                       placeholderTextColor={colors.ink4}
                       autoCapitalize="none"
@@ -206,12 +202,13 @@ export default function BookScreen() {
                       <Pressable onPress={() => setClientQuery("")} hitSlop={8} accessibilityLabel="Clear"><Icon name="x" size={15} color={colors.ink4} /></Pressable>
                     ) : null}
                   </View>
+                  {(clientFocused || clientQuery) ? (
                   <View className="mt-2 overflow-hidden rounded-control-lg border border-line-2 bg-surface">
                     {clientMatches.length === 0 ? (
                       <View className="px-4 py-3"><Text className="text-ink-4" style={{ fontSize: 13.5 }}>No matches.</Text></View>
                     ) : (
                       clientMatches.map((c, i) => (
-                        <Pressable key={c.id} onPress={() => { setClient(c); setClientQuery(""); }} accessibilityRole="button"
+                        <Pressable key={c.id} onPress={() => { setClient(c); setClientQuery(""); setClientFocused(false); }} accessibilityRole="button"
                           className={`flex-row items-center px-3 py-2.5 ${i > 0 ? "border-t border-line" : ""}`} style={{ gap: 10, minHeight: 48 }}>
                           <Avatar name={c.name} size={34} />
                           <Text numberOfLines={1} className="text-ink" style={{ fontSize: 14.5, fontFamily: "Inter_500Medium" }}>{c.name}</Text>
@@ -219,6 +216,7 @@ export default function BookScreen() {
                       ))
                     )}
                   </View>
+                  ) : null}
                 </View>
               )}
             </View>
@@ -305,7 +303,7 @@ export default function BookScreen() {
                       {gslots.map((s) => {
                         const on = slot?.startHour === s.startHour;
                         return (
-                          <Pressable key={s.startHour} onPress={() => setSlot(s)} accessibilityRole="button" accessibilityState={on ? { selected: true } : {}}
+                          <Pressable key={`${label}-${s.startHour}-${s.label}`} onPress={() => setSlot(s)} accessibilityRole="button" accessibilityState={on ? { selected: true } : {}}
                             className={`items-center justify-center rounded-control border ${on ? "border-plum-strong bg-plum-strong" : "border-line-2 bg-surface"}`} style={{ minHeight: 44, paddingHorizontal: 14 }}>
                             <Text style={{ fontSize: 13.5, fontFamily: "Inter_600SemiBold", color: on ? "#fff" : colors.ink }}>{s.label}</Text>
                           </Pressable>
@@ -316,31 +314,31 @@ export default function BookScreen() {
                 ))
             )}
           </View>
+
+          {/* Confirm — lives at the END of the scroll content (not a pinned
+              footer). A pinned footer inside a native formSheet ScrollView was
+              unreliable (cut off / disappearing); an in-flow button is robust. */}
+          <View className="mt-6 px-5">
+            <Text className={ready ? "text-ink-2" : "text-ink-4"} style={{ fontSize: 13, marginBottom: 10, textAlign: "center" }}>
+              {ready && svc && slot
+                ? `${days.find((d) => d.key === dayKey)?.dow} ${days.find((d) => d.key === dayKey)?.n} · ${slot.label} · ${svc.name}`
+                : client ? "Pick a service and a time" : "Pick a client, service and time"}
+            </Text>
+            <Pressable onPress={confirm} disabled={!ready || submitting} accessibilityRole="button"
+              className="flex-row items-center justify-center rounded-control-lg" style={{ height: 52, backgroundColor: ready ? colors.plumStrong : colors.bgWarm, opacity: submitting ? 0.7 : 1 }}>
+              {submitting ? <ActivityIndicator color="#fff" /> : (
+                <>
+                  <Icon name="check" size={16} color={ready ? "#fff" : colors.ink2} />
+                  <Text style={{ marginLeft: 8, fontSize: 15.5, fontFamily: "Inter_600SemiBold", color: ready ? "#fff" : colors.ink2 }}>Confirm in Square</Text>
+                </>
+              )}
+            </Pressable>
+            <Text className="mt-2.5 text-center text-ink-4" style={{ fontSize: 12, lineHeight: 16 }}>
+              Reviewed by you — created in Square only when you confirm
+            </Text>
+          </View>
         </ScrollView>
       )}
-
-      {/* bottom bar */}
-      {!loading ? (
-        <View className="border-t border-line bg-bg px-5 pt-3" style={{ paddingBottom: insets.bottom + 14 }}>
-          <Text className={ready ? "text-ink-2" : "text-ink-4"} style={{ fontSize: 13, marginBottom: 10 }}>
-            {ready && svc && slot
-              ? `${days.find((d) => d.key === dayKey)?.dow} ${days.find((d) => d.key === dayKey)?.n} · ${slot.label} · ${svc.name}`
-              : client ? "Pick a service and a time" : "Pick a client, service and time"}
-          </Text>
-          <Pressable onPress={confirm} disabled={!ready || submitting} accessibilityRole="button"
-            className="flex-row items-center justify-center rounded-control-lg" style={{ height: 52, backgroundColor: ready ? colors.plumStrong : colors.bgWarm, opacity: submitting ? 0.7 : 1 }}>
-            {submitting ? <ActivityIndicator color="#fff" /> : (
-              <>
-                <Icon name="check" size={16} color={ready ? "#fff" : colors.ink2} />
-                <Text style={{ marginLeft: 8, fontSize: 15.5, fontFamily: "Inter_600SemiBold", color: ready ? "#fff" : colors.ink2 }}>Confirm in Square</Text>
-              </>
-            )}
-          </Pressable>
-          <Text className="mt-2.5 text-center text-ink-4" style={{ fontSize: 12, lineHeight: 16 }}>
-            Reviewed by you — created in Square only when you confirm
-          </Text>
-        </View>
-      ) : null}
     </View>
   );
 }
