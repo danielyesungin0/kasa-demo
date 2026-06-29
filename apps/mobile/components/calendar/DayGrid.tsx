@@ -51,7 +51,7 @@ export function DayGrid({
           const end = hourOf(a.ends_at);
           const top = (start - OPEN_HOUR) * HOUR_H + 2;
           const height = Math.max((end - start) * HOUR_H - 4, 30);
-          const isNew = a.source === "kasa";
+          const isNew = a.isNew;
           return (
             <Pressable
               key={a.id}

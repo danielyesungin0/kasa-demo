@@ -2,6 +2,7 @@
 // a filled channel dot, name (bold when unread), 1-line snippet, time, and a
 // small plum calendar glyph when the thread has a booking. Swipe → Read /
 // Archive (gesture-handler Swipeable). Row + actions use exact tokens.
+import { useRef } from "react";
 import { View, Pressable } from "react-native";
 import Swipeable from "react-native-gesture-handler/Swipeable";
 import { Icon } from "@/components/ui/Icon";
@@ -59,10 +60,16 @@ export function InboxRow({
   showDivider: boolean;
 }) {
   const unread = item.unread;
+  const swipeRef = useRef<Swipeable>(null);
+  const close = () => swipeRef.current?.close();
   return (
     <Swipeable
+      ref={swipeRef}
       renderRightActions={() => (
-        <RightActions onRead={onRead} onArchive={onArchive} />
+        <RightActions
+          onRead={() => { close(); onRead(); }}
+          onArchive={() => { close(); onArchive(); }}
+        />
       )}
       overshootRight={false}
     >
@@ -71,13 +78,15 @@ export function InboxRow({
         accessibilityRole="button"
         accessibilityLabel={`Conversation with ${item.client.name}`}
         className="flex-row items-center bg-surface active:bg-surface-2"
-        style={{ paddingVertical: 14, paddingLeft: 20, paddingRight: 18, gap: 12, minHeight: 72 }}
+        style={{ paddingVertical: 14, paddingLeft: 10, paddingRight: 18, gap: 8, minHeight: 72 }}
       >
-        {/* unread dot — absolutely placed in the left gutter so it doesn't shift
-            the avatar; content starts flush at the 20px gutter (with the pills). */}
-        {unread ? (
-          <View style={{ position: "absolute", left: 7, top: "50%", marginTop: -4, width: 8, height: 8, borderRadius: 4, backgroundColor: colors.accent }} />
-        ) : null}
+        {/* unread dot — a fixed-width centered column on the left (iMessage-style),
+            so the avatar/text always align whether or not the dot is shown. */}
+        <View style={{ width: 14, alignItems: "center", justifyContent: "center" }}>
+          {unread ? (
+            <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: colors.accent }} />
+          ) : null}
+        </View>
 
         {/* avatar + channel dot bottom-right */}
         <View style={{ width: 48, height: 48, alignItems: "center", justifyContent: "center" }}>
@@ -126,7 +135,7 @@ export function InboxRow({
         </View>
       </Pressable>
       {showDivider ? (
-        <View style={{ height: 1, backgroundColor: colors.line, marginLeft: 80 }} />
+        <View style={{ height: 1, backgroundColor: colors.line, marginLeft: 88 }} />
       ) : null}
     </Swipeable>
   );

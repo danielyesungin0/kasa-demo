@@ -17,7 +17,9 @@ export type Appointment = {
   source: string | null;
   clientName: string;
   serviceName: string | null;
-  isNew?: boolean; // "New" marker for an appt booked this session
+  /** "New" = booked through Kasa within the last 24h (a fresh-arrival signal
+   *  that clears on its own), not just any Kasa booking forever. */
+  isNew: boolean;
 };
 
 const TZ = "America/New_York";
@@ -48,7 +50,7 @@ export function useAppointments() {
     // Join only clients (real FK); resolve service names separately.
     const { data, error } = await supabase
       .from("appointments")
-      .select("id, client_id, service_id, service_name, starts_at, ends_at, status, source, client:clients(name)")
+      .select("id, client_id, service_id, service_name, starts_at, ends_at, status, source, created_at, client:clients(name)")
       .neq("status", "canceled")
       .order("starts_at", { ascending: true });
     if (error) {
@@ -78,6 +80,10 @@ export function useAppointments() {
       clientName: a.client?.name ?? "Client",
       // prefer the live catalog name, else the denormalized one stored at booking
       serviceName: (a.service_id && svcName.get(a.service_id)) || a.service_name || null,
+      // "New": booked via Kasa in the last 24h — a fresh-arrival badge that
+      // clears itself (was previously shown forever for any kasa booking).
+      isNew: a.source === "kasa" && a.created_at != null &&
+        (Date.now() - new Date(a.created_at).getTime()) < 24 * 60 * 60 * 1000,
     }));
     setItems(mapped);
     setLoading(false);

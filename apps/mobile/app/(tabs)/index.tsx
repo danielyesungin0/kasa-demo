@@ -102,7 +102,7 @@ export default function TodayScreen() {
                     <Text numberOfLines={1} style={{ fontSize: 15, fontFamily: "Inter_600SemiBold", color: colors.ink }}>{a.clientName}</Text>
                     <Text numberOfLines={1} className="text-ink-3" style={{ fontSize: 12.5, marginTop: 1 }}>{a.serviceName ?? "Appointment"}</Text>
                   </View>
-                  {a.source === "kasa" ? (
+                  {a.isNew ? (
                     <View className="rounded-[5px] bg-plum-strong px-1.5 py-0.5"><Text style={{ fontSize: 9, fontFamily: "Inter_700Bold", color: "#fff" }}>New</Text></View>
                   ) : null}
                   {a.client_id ? <Icon name="chevR" size={16} color={colors.ink4} /> : null}
