@@ -63,18 +63,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error?.message ?? null };
   }
 
-  // Google via expo-auth-session → Supabase signInWithIdToken. The actual
-  // provider redirect/config is a TODO(oauth): needs the Google client IDs +
-  // Supabase Google provider enabled. Wired in Phase 4 alongside the other
-  // external-OAuth seams. Until then this returns a clear not-configured error
-  // rather than a fake success.
+  // Google via Supabase's hosted OAuth (browser flow). Reuses the Google
+  // provider already enabled on the Supabase project — no app-specific Google
+  // client IDs needed. Opens the consent page in a web browser and returns to
+  // the app via the kasa:// deep link, then sets the session from the URL.
+  // Requires the redirect (makeRedirectUri below) to be in the project's
+  // Auth → URL Configuration → Redirect URLs.
   async function signInWithGoogle(): Promise<AuthResult> {
-    // TODO(oauth): implement the Google AuthSession flow + supabase
-    // signInWithIdToken({ provider: 'google', token }). Requires GOOGLE_*
-    // client IDs and the Supabase Google provider enabled.
-    const _redirect = AuthSession.makeRedirectUri({ scheme: "kasa" });
-    void _redirect;
-    return { error: "Google sign-in isn't configured yet (Phase 4)." };
+    try {
+      const redirectTo = AuthSession.makeRedirectUri({ scheme: "kasa", path: "auth-callback" });
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo, skipBrowserRedirect: true },
+      });
+      if (error) return { error: error.message };
+      if (!data?.url) return { error: "Couldn't start Google sign-in." };
+
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      if (result.type !== "success" || !result.url) {
+        return { error: null }; // user dismissed/cancelled
+      }
+
+      // Exchange the returned URL for a session. Supabase returns either a
+      // PKCE ?code= or a #access_token fragment depending on flow.
+      const url = result.url;
+      const params = new URLSearchParams(url.split("#")[1] ?? "");
+      const code = new URL(url).searchParams.get("code");
+      if (code) {
+        const { error: exErr } = await supabase.auth.exchangeCodeForSession(code);
+        return { error: exErr?.message ?? null };
+      }
+      const access_token = params.get("access_token");
+      const refresh_token = params.get("refresh_token");
+      if (access_token && refresh_token) {
+        const { error: setErr } = await supabase.auth.setSession({ access_token, refresh_token });
+        return { error: setErr?.message ?? null };
+      }
+      return { error: "Google sign-in didn't return a session." };
+    } catch (e: any) {
+      return { error: e?.message ?? "Google sign-in failed." };
+    }
   }
 
   // Apple via expo-apple-authentication (native) → Supabase signInWithIdToken.
