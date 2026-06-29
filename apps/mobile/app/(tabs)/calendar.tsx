@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { View, Pressable, ScrollView, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { Icon } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
 import { DayGrid } from "@/components/calendar/DayGrid";
@@ -27,6 +27,16 @@ export default function CalendarScreen() {
   const [weekKey, setWeekKey] = useState(weekStart(todayKey()));
   const [monthIdx, setMonthIdx] = useState(new Date().getMonth());
   const year = new Date().getFullYear();
+
+  // When navigated with ?day=YYYY-MM-DD (e.g. right after booking), jump to that
+  // day in Day view so the new appointment is visible.
+  const params = useLocalSearchParams<{ day?: string }>();
+  useEffect(() => {
+    if (params.day) {
+      setDayKey(params.day);
+      setView("day");
+    }
+  }, [params.day]);
 
   const days = useMemo(() => dayStrip(weekStart(todayKey()), 14), []); // 2 weeks of day pills
   const weeks = useMemo(() => weekStrip(todayKey()), []);

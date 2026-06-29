@@ -133,7 +133,17 @@ export default function BookScreen() {
     setResult(res.ok ? { ok: true } : { ok: false, error: res.error });
   }
 
-  if (result) return <ResultView result={result} client={client} svc={svc} slot={slot} dayKey={dayKey} onClose={() => router.back()} onRetry={() => setResult(null)} />;
+  if (result) {
+    // On success, dismiss the sheet and jump to the Calendar on the booked day
+    // so the new appointment is immediately visible. On failure, just close.
+    const onClose = () => {
+      router.back();
+      if (result.ok) {
+        setTimeout(() => router.push(`/(tabs)/calendar?day=${dayKey}`), 50);
+      }
+    };
+    return <ResultView result={result} client={client} svc={svc} slot={slot} dayKey={dayKey} onClose={onClose} onRetry={() => setResult(null)} />;
+  }
 
   return (
     // collapsable={false}: RNScreens formSheet expects a single content subview;
@@ -294,10 +304,9 @@ export default function BookScreen() {
               </>
             )}
           </Pressable>
-          <View className="mt-2.5 flex-row items-center justify-center" style={{ gap: 6 }}>
-            <Icon name="check" size={11} color={colors.ink4} />
-            <Text className="text-ink-4" style={{ fontSize: 12 }}>Reviewed by you — created in Square only when you confirm</Text>
-          </View>
+          <Text className="mt-2.5 text-center text-ink-4" style={{ fontSize: 12, lineHeight: 16 }}>
+            Reviewed by you — created in Square only when you confirm
+          </Text>
         </View>
       ) : null}
     </View>
