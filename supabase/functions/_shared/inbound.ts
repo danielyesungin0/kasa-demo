@@ -45,6 +45,13 @@ export type InboundMessage = {
   externalThreadId?: string | null;
   /** When the client sent it (ISO). Defaults to now. */
   sentAt?: string | null;
+  /**
+   * "in" = client → stylist (default). "out" = the stylist's OWN reply, echoed
+   * back by the provider (e.g. they replied from the Instagram app, not Kasa) —
+   * we record it so Kasa stays in sync with the real thread. For an echo,
+   * externalUserId is the RECIPIENT (the client), not the sender.
+   */
+  direction?: "in" | "out";
 };
 
 export type NormalizeResult = {
@@ -187,15 +194,20 @@ export async function normalizeInbound(
       .eq("channel_type", msg.channel)
       .maybeSingle();
 
-    const fields = {
+    const isOut = msg.direction === "out";
+    // An inbound (client) message refreshes the reply window + marks unread. An
+    // echo (our own reply from the IG app) does NOT reopen the window or mark
+    // unread — it's our message — but it does advance last_message_at and, like
+    // sending from Kasa, clears unread.
+    const fields: Record<string, unknown> = {
       stylist_id: stylistId,
       client_id: clientId,
       channel_type: msg.channel,
       external_thread_id: msg.externalThreadId ?? null,
       last_message_at: receivedAt,
-      unread: true,
-      window_expires_at: windowExpiry(msg.channel, receivedAt),
+      unread: isOut ? false : true,
     };
+    if (!isOut) fields.window_expires_at = windowExpiry(msg.channel, receivedAt);
 
     if (convo?.id) {
       conversationId = convo.id;
@@ -211,6 +223,35 @@ export async function normalizeInbound(
     }
   }
 
+  // 3b) ECHO DEDUPE — when the stylist sends from Kasa, send-message already
+  //     wrote an outbound row, then Instagram echoes that same message back via
+  //     this webhook. The provider's send-response id and the echo's mid don't
+  //     always match, so step-1's id dedupe can miss → a duplicate bubble. Guard
+  //     it: if this is an echo and a matching recent outbound row already exists
+  //     in this conversation (same body, last ~2 min), treat it as a duplicate.
+  if (msg.direction === "out" && conversationId) {
+    const since = new Date(new Date(receivedAt).getTime() - 120_000).toISOString();
+    const { data: recent } = await admin
+      .from("messages")
+      .select("id, body")
+      .eq("conversation_id", conversationId)
+      .eq("direction", "out")
+      .gte("sent_at", since);
+    const dup = (recent ?? []).find((r: { body: string | null }) =>
+      (r.body ?? "") === (msg.text ?? "")
+    );
+    if (dup) {
+      // Backfill the provider id on the existing row so future redeliveries
+      // hit the fast id-dedupe in step 1.
+      if (msg.channelMessageId) {
+        await admin.from("messages")
+          .update({ channel_message_id: msg.channelMessageId })
+          .eq("id", dup.id);
+      }
+      return { ok: true, deduped: true, message_id: dup.id, conversation_id: conversationId };
+    }
+  }
+
   // 4) MESSAGE — insert inbound row. Unique index on channel_message_id is the
   //    final dedupe backstop against a race past step 1.
   let messageId: string | null = null;
@@ -219,11 +260,11 @@ export async function normalizeInbound(
       .from("messages")
       .insert({
         conversation_id: conversationId,
-        direction: "in",
+        direction: msg.direction === "out" ? "out" : "in",
         body: msg.text ?? null,
         media: msg.media ?? null,
         channel_message_id: msg.channelMessageId || null,
-        status: "delivered",
+        status: msg.direction === "out" ? "sent" : "delivered",
         sent_at: sentAt,
       })
       .select("id")

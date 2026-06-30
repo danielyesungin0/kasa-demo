@@ -67,20 +67,28 @@ function parseMeta(payload: unknown): InboundMessage[] {
   for (const entry of body.entry ?? []) {
     for (const m of entry.messaging ?? []) {
       const sender = (m.sender as { id?: string } | undefined)?.id;
+      const recipient = (m.recipient as { id?: string } | undefined)?.id;
       const message = m.message as
-        | { mid?: string; text?: string; attachments?: unknown }
+        | { mid?: string; text?: string; attachments?: unknown; is_echo?: boolean }
         | undefined;
-      if (!sender || !message?.mid) continue; // skip echoes/read receipts/etc.
+      if (!message?.mid) continue; // read receipts / reactions / etc. — skip
+
+      const isEcho = message.is_echo === true;
+      // ECHO = the stylist's OWN message, sent from the Instagram app (not Kasa).
+      // Record it so the chat stays in sync. For an echo the CLIENT is the
+      // recipient; for a normal inbound the client is the sender.
+      const clientExternalId = isEcho ? recipient : sender;
+      if (!clientExternalId) continue;
+
       out.push({
         channel: "instagram",
-        externalUserId: sender,
+        externalUserId: clientExternalId,
         channelMessageId: message.mid,
-        // For IG Messenger you reply to the sender's IG-scoped id (recipient.id),
-        // so the sender IS the thread recipient. Store it so send-message can
-        // reach this person.
-        externalThreadId: sender,
+        // Reply target is always the client's IG-scoped id.
+        externalThreadId: clientExternalId,
         text: message.text ?? null,
         media: message.attachments ?? null,
+        direction: isEcho ? "out" : "in",
         sentAt: typeof m.timestamp === "number"
           ? new Date(m.timestamp).toISOString()
           : null,
