@@ -10,7 +10,8 @@ import { SearchBar } from "@/components/ui/SearchBar";
 import { setPendingBooking } from "@/lib/bookingResult";
 import { useAppointments } from "@/lib/useAppointments";
 import { listServices, fetchAllSlots, availableSlots, createBooking, cancelBooking, type Service, type Slot } from "@/lib/booking";
-import { dayStrip, weekStart, todayKey } from "@/lib/calendar";
+import { todayKey, addDaysKey } from "@/lib/calendar";
+import { MonthCalendar } from "@/components/ui/MonthCalendar";
 import { supabase } from "@/lib/supabase";
 import { colors } from "@/theme/colors";
 
@@ -44,7 +45,6 @@ export default function BookScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; error?: string } | null>(null);
 
-  const days = useMemo(() => dayStrip(weekStart(todayKey()), 14), []);
 
   const clientMatches = useMemo(() => {
     const q = clientQuery.trim().toLowerCase();
@@ -108,6 +108,16 @@ export default function BookScreen() {
     });
     return () => { active = false; };
   }, [svc]);
+
+  // The dateKeys the availability fetch covers (today → ~3 weeks, matching
+  // fetchAllSlots' week_count). A day in this window absent from slotsByDay is a
+  // genuine no-openings day (dim it); beyond it we don't know (leave tappable).
+  const daysInWindow = useMemo(() => {
+    const set = new Set<string>();
+    let k = todayKey();
+    for (let i = 0; i < 21; i++) { set.add(k); k = addDaysKey(k, 1); }
+    return set;
+  }, []);
   const slots = useMemo<Slot[]>(() => {
     if (!svc) return [];
     const fromSquare = slotsByDay[dayKey];
@@ -149,8 +159,11 @@ export default function BookScreen() {
     // SUCCESS: no full success screen. Hand off a pending result (toast + draft)
     // and dismiss the modal back to whatever's underneath — the original chat
     // (no duplicate thread) or the calendar. The draft is review-only.
-    const d = days.find((x) => x.key === dayKey);
-    const when = d ? `${d.dow} the ${d.n}` : "your appointment";
+    // "Wed, Jul 2" style label straight from the selected dayKey (works for any
+    // date, not just the visible pill window).
+    const when = new Date(`${dayKey}T12:00:00`).toLocaleDateString("en-US", {
+      timeZone: "America/New_York", weekday: "long", month: "short", day: "numeric",
+    });
     const draft = client
       ? `Hi ${client.name.split(" ")[0].replace(/^@/, "")}! You're booked for a ${svc.name} on ${when} at ${slot.label}. See you then! 🤍`
       : null;
@@ -288,34 +301,26 @@ export default function BookScreen() {
           )}
         </View>
 
-        {/* Day — once slots load, days with no availability are dimmed (and not
-            selectable) so it's clear which days the stylist actually works. */}
+        {/* Day — a compact month calendar (Calendly/Square pattern). Within the
+            loaded availability window, days the stylist doesn't work (no slots)
+            are dimmed + non-tappable; days beyond the window stay tappable and
+            resolve in the times section below. Scales to any date via paging. */}
         <View className="mt-5">
           <Text className="mb-2 text-ink-4" style={{ fontSize: 12, fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>DAY</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7 }}>
-            {days.map((d) => {
-              const on = d.key === dayKey;
-              // "unavailable" only once we have loaded slot data for the service
-              // (don't dim before we know). A day with a loaded-but-empty list
-              // (or missing from the map after a load) has no openings.
-              const slotsLoaded = svc && !slotsLoading && Object.keys(slotsByDay).length > 0;
-              const unavailable = !!slotsLoaded && (slotsByDay[d.key]?.length ?? 0) === 0;
-              return (
-                <Pressable
-                  key={d.key}
-                  onPress={() => { if (!unavailable) { setDayKey(d.key); setSlot(null); } }}
-                  disabled={unavailable}
-                  accessibilityRole="button"
-                  accessibilityState={{ disabled: unavailable, selected: on }}
-                  className={`items-center justify-center rounded-[15px] border ${on ? "border-ink bg-ink" : "border-line-2 bg-surface"}`}
-                  style={{ width: 50, height: 54, gap: 3, opacity: unavailable ? 0.34 : 1 }}
-                >
-                  <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: on ? "#fff" : d.isToday ? colors.accent : colors.ink4 }}>{d.dow}</Text>
-                  <Text tabular style={{ fontSize: 17, fontFamily: "Inter_600SemiBold", color: on ? "#fff" : colors.ink2 }}>{d.n}</Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
+          <View className="rounded-control-lg border border-line-2 bg-surface px-3 py-3">
+            <MonthCalendar
+              selectedKey={dayKey}
+              onSelect={(k) => { setDayKey(k); setSlot(null); }}
+              isDisabled={(k) => {
+                // Only judge availability within the loaded window; never dim
+                // what we haven't fetched yet.
+                const loaded = svc && !slotsLoading && Object.keys(slotsByDay).length > 0;
+                if (!loaded) return false;
+                if (!(k in slotsByDay) && !daysInWindow.has(k)) return false; // beyond window
+                return (slotsByDay[k]?.length ?? 0) === 0;
+              }}
+            />
+          </View>
         </View>
 
         {/* Available times */}
