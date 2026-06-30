@@ -73,15 +73,30 @@ export default function InboxScreen() {
     <View className="flex-1 bg-bg" style={{ paddingTop: insets.top }}>
       {/* header */}
       <View className="px-gutter pb-2.5 pt-3">
-        <View className="mb-3" style={{ minHeight: 40, justifyContent: "center" }}>
+        <View className="mb-3 flex-row items-center justify-between" style={{ minHeight: 40 }}>
           <Text variant="title">Inbox</Text>
+          {/* channel filter → bottom sheet, in the header. Only shown with >1
+              channel (ready for WeChat); highlights when a channel is active. */}
+          {presentChannels.length > 1 ? (
+            <Pressable
+              onPress={() => setFilterOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Filter by channel"
+              className={`flex-row items-center rounded-pill border px-3 ${channel !== "all" ? "border-ink bg-ink" : "border-line-2 bg-surface"}`}
+              style={{ minHeight: 36, gap: 6 }}
+            >
+              <Icon name="merge" size={14} color={channel !== "all" ? "#fff" : colors.ink2} />
+              <Text style={{ fontSize: 13, fontFamily: "Inter_600SemiBold", color: channel !== "all" ? "#fff" : colors.ink2 }}>
+                {channel === "all" ? "Channel" : channelLabel(channel)}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
 
         {/* search — filters by client name or message text */}
         <SearchBar value={query} onChangeText={setQuery} placeholder="Search messages" />
 
-        {/* status pills (quick taps) + a channel-filter button on the right.
-            Channel lives in a bottom sheet since it's the occasional one. */}
+        {/* status pills (quick taps) */}
         <View className="mt-3 flex-row items-center" style={{ gap: 8 }}>
           {STATUS_PILLS.map((p) => {
             const on = status === p.key;
@@ -100,22 +115,6 @@ export default function InboxScreen() {
               </Pressable>
             );
           })}
-          <View style={{ flex: 1 }} />
-          {/* channel filter → bottom sheet. Only shown when there's >1 channel. */}
-          {presentChannels.length > 1 ? (
-            <Pressable
-              onPress={() => setFilterOpen(true)}
-              accessibilityRole="button"
-              accessibilityLabel="Filter by channel"
-              className={`flex-row items-center rounded-pill border px-3 ${channel !== "all" ? "border-ink bg-ink" : "border-line-2 bg-surface"}`}
-              style={{ minHeight: 36, gap: 6 }}
-            >
-              <Icon name="merge" size={14} color={channel !== "all" ? "#fff" : colors.ink2} />
-              <Text style={{ fontSize: 13, fontFamily: "Inter_600SemiBold", color: channel !== "all" ? "#fff" : colors.ink2 }}>
-                {channel === "all" ? "Channel" : channelLabel(channel)}
-              </Text>
-            </Pressable>
-          ) : null}
         </View>
       </View>
 
