@@ -10,6 +10,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
 import { ChannelDot } from "@/components/ui/ChannelDot";
 import { ConnectSheet } from "./ConnectSheet";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useChannels, type ConnState, type ProviderId } from "@/lib/useChannels";
 import { colors } from "@/theme/colors";
 
@@ -44,6 +45,16 @@ export function ChannelsScreen({
   const [refreshing, setRefreshing] = useState(false);
   async function onRefresh() { setRefreshing(true); await refresh(); setRefreshing(false); }
   const [sheet, setSheet] = useState<ProviderId | null>(null);
+  const [disconnectId, setDisconnectId] = useState<ProviderId | null>(null);
+  const [disconnecting, setDisconnecting] = useState(false);
+  const disconnectMeta = disconnectId ? PROVIDERS.find((p) => p.id === disconnectId) : null;
+  async function doDisconnect() {
+    if (!disconnectId || disconnecting) return;
+    setDisconnecting(true);
+    await disconnect(disconnectId);
+    setDisconnecting(false);
+    setDisconnectId(null);
+  }
 
   const channelsConnected = conn.instagram.state === "connected" ? 1 : 0;
   const squareConnected = conn.square.state === "connected";
@@ -80,8 +91,15 @@ export function ChannelsScreen({
           </Text>
         </View>
         {info.state === "connected" ? (
-          <Pressable onPress={() => disconnect(id)} accessibilityRole="button" accessibilityLabel={`Disconnect ${meta.name}`} style={{ minHeight: 44, justifyContent: "center" }}>
+          <Pressable
+            onPress={() => setDisconnectId(id)}
+            accessibilityRole="button"
+            accessibilityLabel={`Disconnect ${meta.name}`}
+            className="flex-row items-center active:opacity-70"
+            style={{ minHeight: 44, gap: 7 }}
+          >
             <StatePill state="connected" />
+            <Icon name="chevR" size={15} color={colors.ink4} />
           </Pressable>
         ) : info.state === "connecting" ? (
           <View className="flex-row items-center rounded-control bg-bg-warm px-3.5" style={{ height: 36 }}>
@@ -113,9 +131,12 @@ export function ChannelsScreen({
   }
 
   return (
-    <View className="flex-1 bg-bg" style={{ paddingTop: insets.top }}>
+    // Only inset the top in gated (onboarding) mode — in Settings the parent
+    // screen already renders a header below the safe area, so adding the inset
+    // here created the big empty gap at the top.
+    <View className="flex-1 bg-bg" style={{ paddingTop: gated ? insets.top : 0 }}>
       <ScrollView
-        contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + (gated ? 140 : 40) }}
+        contentContainerStyle={{ padding: 20, paddingTop: gated ? 20 : 12, paddingBottom: insets.bottom + (gated ? 140 : 40) }}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.ink4} />}
       >
@@ -133,11 +154,9 @@ export function ChannelsScreen({
               <Text tabular style={{ fontSize: 12.5, fontFamily: "Inter_700Bold", color: colors.ink2 }}>{done}/2</Text>
             </View>
           </>
-        ) : (
-          <Text variant="title-lg">Channels</Text>
-        )}
+        ) : null}
 
-        <Text className="mt-5 mb-2.5 px-1 text-ink-4" style={{ fontSize: 12, fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>BOOKING</Text>
+        <Text className={`${gated ? "mt-5" : ""} mb-2.5 px-1 text-ink-4`} style={{ fontSize: 12, fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>BOOKING</Text>
         <View className="overflow-hidden rounded-card border border-line bg-surface">
           <ConnRow id="square" />
         </View>
@@ -187,6 +206,21 @@ export function ChannelsScreen({
       ) : null}
 
       <ConnectSheet provider={sheet} onClose={() => setSheet(null)} onConnect={onConnectFromSheet} />
+
+      <ConfirmDialog
+        visible={!!disconnectId}
+        title={`Disconnect ${disconnectMeta?.name ?? ""}?`}
+        message={
+          disconnectId === "square"
+            ? "Kasa won't be able to read availability or create bookings until you reconnect."
+            : "You'll stop receiving new messages from this channel in Kasa until you reconnect."
+        }
+        confirmLabel={disconnecting ? "Disconnecting…" : "Disconnect"}
+        cancelLabel="Keep connected"
+        destructive
+        onConfirm={doDisconnect}
+        onCancel={() => { if (!disconnecting) setDisconnectId(null); }}
+      />
     </View>
   );
 }
