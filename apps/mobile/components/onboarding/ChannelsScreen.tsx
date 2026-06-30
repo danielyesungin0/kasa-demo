@@ -14,13 +14,14 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useChannels, type ConnState, type ProviderId } from "@/lib/useChannels";
 import { colors } from "@/theme/colors";
 
-// MVP connects Square + Instagram. WeChat/SMS/Kakao are post-launch.
+// Square + Instagram connect now. WeChat is a real channel pending OA
+// verification (shows a Pending state). SMS/Kakao remain post-launch.
 const PROVIDERS: { id: ProviderId; name: string; sub: string; required?: boolean; channel?: boolean }[] = [
   { id: "square", name: "Square", sub: "Your calendar & bookings", required: true },
   { id: "instagram", name: "Instagram", sub: "Client DMs", channel: true },
+  { id: "wechat", name: "WeChat", sub: "Client messages", channel: true },
 ];
 const LATER = [
-  { id: "wechat", name: "WeChat", sub: "Client messages" },
   { id: "sms", name: "SMS", sub: "Text messages" },
   { id: "kakao", name: "KakaoTalk", sub: "Client messages" },
 ] as const;
@@ -30,6 +31,8 @@ function StatePill({ state }: { state: ConnState }) {
     return <View className="rounded-pill bg-ok-soft px-2.5 py-1.5"><Text style={{ fontSize: 11, fontFamily: "Inter_700Bold", color: colors.okInk }}>Connected</Text></View>;
   if (state === "action_needed")
     return <View className="rounded-pill bg-warn-soft px-2.5 py-1.5"><Text style={{ fontSize: 11, fontFamily: "Inter_700Bold", color: colors.warnInk }}>Reconnect</Text></View>;
+  if (state === "pending")
+    return <View className="rounded-pill bg-warn-soft px-2.5 py-1.5"><Text style={{ fontSize: 11, fontFamily: "Inter_700Bold", color: colors.warnInk }}>Pending</Text></View>;
   return null;
 }
 
@@ -87,10 +90,17 @@ export function ChannelsScreen({
             ) : null}
           </View>
           <Text numberOfLines={1} className="text-ink-3" style={{ fontSize: 12.5, marginTop: 2 }}>
-            {info.state === "connected" ? info.label ?? "Connected" : meta.sub}
+            {info.state === "connected"
+              ? info.label ?? "Connected"
+              : info.state === "pending"
+                ? "Awaiting verification — usually 7–15 days"
+                : meta.sub}
           </Text>
         </View>
-        {info.state === "connected" ? (
+        {info.state === "pending" ? (
+          // OA verification in review — no connect action yet, honest status.
+          <StatePill state="pending" />
+        ) : info.state === "connected" ? (
           <Pressable
             onPress={() => setDisconnectId(id)}
             accessibilityRole="button"
@@ -161,9 +171,10 @@ export function ChannelsScreen({
           <ConnRow id="square" />
         </View>
 
-        <Text className="mt-5 mb-2.5 px-1 text-ink-4" style={{ fontSize: 12, fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>MESSAGE CHANNEL</Text>
+        <Text className="mt-5 mb-2.5 px-1 text-ink-4" style={{ fontSize: 12, fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>MESSAGE CHANNELS</Text>
         <View className="overflow-hidden rounded-card border border-line bg-surface">
           <ConnRow id="instagram" />
+          <ConnRow id="wechat" />
         </View>
 
         <Text className="mt-5 mb-2.5 px-1 text-ink-4" style={{ fontSize: 12, fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>MORE CHANNELS</Text>

@@ -10,8 +10,9 @@ import { useCallback, useEffect, useState } from "react";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
 import { supabase, FUNCTIONS_URL } from "./supabase";
+import { WECHAT_LIVE } from "./config";
 
-export type ConnState = "idle" | "connecting" | "connected" | "action_needed";
+export type ConnState = "idle" | "connecting" | "connected" | "action_needed" | "pending";
 
 export type ProviderId = "square" | "instagram" | "wechat";
 
@@ -54,6 +55,11 @@ export function useChannels(): ChannelsData {
 
     const byType = new Map((chans ?? []).map((c: any) => [c.type, c]));
     const channelInfo = (t: "instagram" | "wechat"): ConnInfo => {
+      // WeChat is not live until OA verification is approved + credentials set.
+      // Show a "pending verification" state instead of a connect affordance.
+      if (t === "wechat" && !WECHAT_LIVE) {
+        return { state: "pending", label: "Verification in review" };
+      }
       const row: any = byType.get(t);
       if (!row) return { state: "idle" };
       if (row.status === "action_needed") return { state: "action_needed", label: "Reconnect needed" };
@@ -183,19 +189,16 @@ export function useChannels(): ChannelsData {
       return;
     }
 
-    // WeChat: still seeds a row (real WeChat OAuth/QR is a later chunk).
-    const stylistId = await getStylistId();
-    if (!stylistId) return setState(id, { state: "idle" });
-    await supabase.from("channels").upsert(
-      {
-        stylist_id: stylistId,
-        type: id,
-        connected: true,
-        status: "connected",
-        external_account_id: "Shen Hair Studio 公众号",
-      },
-      { onConflict: "stylist_id,type" },
-    );
+    // WeChat: not connectable until OA verification is approved + credentials
+    // configured (WECHAT_LIVE). Until then it's a no-op — the UI shows the
+    // "Pending verification" state, never a fake connect.
+    if (id === "wechat") {
+      if (!WECHAT_LIVE) { await refresh(); return; }
+      // (When live, the real WeChat connect flow — store AppID/secret + token —
+      // slots in here.)
+      await refresh();
+      return;
+    }
     await refresh();
   }, [refresh]);
 
