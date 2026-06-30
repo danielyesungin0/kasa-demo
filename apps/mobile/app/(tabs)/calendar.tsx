@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Pressable, ScrollView, ActivityIndicator, Alert, Animated } from "react-native";
+import { View, Pressable, ScrollView, Alert, Animated } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -7,6 +7,7 @@ import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { Icon } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
 import { ActionSheet } from "@/components/ui/ActionSheet";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { DayGrid } from "@/components/calendar/DayGrid";
 import { WeekGrid } from "@/components/calendar/WeekGrid";
 import { MonthGrid } from "@/components/calendar/MonthGrid";
@@ -185,7 +186,14 @@ export default function CalendarScreen() {
 
       {/* active grid */}
       {loading ? (
-        <View className="flex-1 items-center justify-center"><ActivityIndicator color={colors.ink4} /></View>
+        <View className="flex-1 bg-surface px-gutter" style={{ paddingTop: 16, gap: 14 }}>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <View key={i} className="flex-row items-center" style={{ gap: 12 }}>
+              <Skeleton width={52} height={13} radius={6} />
+              <View className="flex-1"><Skeleton width={"100%"} height={56} radius={14} /></View>
+            </View>
+          ))}
+        </View>
       ) : (
         <GestureDetector gesture={swipe}>
           <ScrollView className="flex-1 bg-surface" contentContainerStyle={{ paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 16 }} showsVerticalScrollIndicator={false}>

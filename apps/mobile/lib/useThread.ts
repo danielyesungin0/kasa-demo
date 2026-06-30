@@ -50,12 +50,17 @@ export function useThread(conversationId: string) {
   }, [conversationId]);
 
   const loadMessages = useCallback(async () => {
+    // Load the most recent 100 (descending + limit, then reverse for display)
+    // so opening a long-running thread stays fast. Older messages can be paged
+    // in later if needed.
     const { data } = await supabase
       .from("messages")
       .select("id, conversation_id, direction, body, media, channel_message_id, status, sent_at")
       .eq("conversation_id", conversationId)
-      .order("sent_at", { ascending: true });
-    merge((data ?? []) as MessageRow[]);
+      .order("sent_at", { ascending: false })
+      .limit(100);
+    const rows = ((data ?? []) as MessageRow[]).reverse();
+    merge(rows);
   }, [conversationId, merge]);
 
   useEffect(() => {

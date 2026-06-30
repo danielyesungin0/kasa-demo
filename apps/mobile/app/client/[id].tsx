@@ -1,8 +1,9 @@
-import { View, Pressable, ScrollView, ActivityIndicator, Linking } from "react-native";
+import { View, Pressable, ScrollView, Linking } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { Avatar } from "@/components/ui/Avatar";
 import { ChannelDot } from "@/components/ui/ChannelDot";
 import { useClientProfile } from "@/lib/useClients";
@@ -22,9 +23,19 @@ export default function ClientScreen() {
     return (
       <View className="flex-1 bg-bg" style={{ paddingTop: insets.top }}>
         <Header onBack={() => router.back()} />
-        <View className="flex-1 items-center justify-center">
-          {loading ? <ActivityIndicator color={colors.ink4} /> : <Text className="text-ink-3">Client not found.</Text>}
-        </View>
+        {loading ? (
+          <View className="px-gutter" style={{ paddingTop: 20, gap: 16 }}>
+            <View className="items-center" style={{ gap: 10 }}>
+              <Skeleton width={84} height={84} radius={42} />
+              <Skeleton width={140} height={18} radius={9} />
+              <Skeleton width={100} height={13} radius={6} />
+            </View>
+            <Skeleton width={"100%"} height={64} radius={16} />
+            <Skeleton width={"100%"} height={120} radius={16} />
+          </View>
+        ) : (
+          <View className="flex-1 items-center justify-center"><Text className="text-ink-3">Client not found.</Text></View>
+        )}
       </View>
     );
   }

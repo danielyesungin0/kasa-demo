@@ -18,6 +18,8 @@ function snippetFor(body: string | null, direction: string): string {
 
 /** One round-trip that assembles inbox items (conversation + client + snippet). */
 async function loadInbox(): Promise<InboxItem[]> {
+  // Cap the inbox page: the 200 most recent conversations. (Older threads load
+  // via search/scroll later; pulling all-time conversations doesn't scale.)
   const { data: convos, error } = await supabase
     .from("conversations")
     .select(
@@ -25,18 +27,25 @@ async function loadInbox(): Promise<InboxItem[]> {
         "client:clients(id, name, value, phone, email, instagram_handle)",
     )
     .eq("archived", false)
-    .order("last_message_at", { ascending: false, nullsFirst: false });
+    .order("last_message_at", { ascending: false, nullsFirst: false })
+    .limit(200);
   if (error || !convos) return [];
 
   // Latest message per conversation for the snippet (one query, then map).
+  // Bounded so we never pull a whole message history just for previews: only
+  // messages from the last ~90 days, newest first; the first per conversation
+  // wins. (Threads with no message in the window simply show no snippet.)
   const ids = convos.map((c: any) => c.id);
   const snippets = new Map<string, { body: string | null; direction: string }>();
   if (ids.length) {
+    const since = new Date(Date.now() - 90 * 864e5).toISOString();
     const { data: msgs } = await supabase
       .from("messages")
       .select("conversation_id, body, direction, sent_at")
       .in("conversation_id", ids)
-      .order("sent_at", { ascending: false });
+      .gte("sent_at", since)
+      .order("sent_at", { ascending: false })
+      .limit(1000);
     for (const m of (msgs ?? []) as any[]) {
       if (!snippets.has(m.conversation_id)) {
         snippets.set(m.conversation_id, { body: m.body, direction: m.direction });

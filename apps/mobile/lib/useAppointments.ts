@@ -48,10 +48,19 @@ export function useAppointments() {
     // text (legacy) with no FK to provider_services.id (uuid), so PostgREST
     // can't join it and the WHOLE query errors (PGRST200) → empty calendar.
     // Join only clients (real FK); resolve service names separately.
+    // Bound the window so this scales with a large history: load ~2 months back
+    // (recent past for client profiles) through ~4 months ahead (forward
+    // bookings). The calendar never shows beyond this, so it's safe + much
+    // lighter than pulling all-time appointments.
+    const now = new Date();
+    const from = new Date(now.getTime() - 60 * 864e5).toISOString();
+    const to = new Date(now.getTime() + 120 * 864e5).toISOString();
     const { data, error } = await supabase
       .from("appointments")
       .select("id, client_id, service_id, service_name, starts_at, ends_at, status, source, created_at, client:clients(name)")
       .neq("status", "canceled")
+      .gte("starts_at", from)
+      .lte("starts_at", to)
       .order("starts_at", { ascending: true });
     if (error) {
       console.error("[useAppointments] load failed:", error.message);
