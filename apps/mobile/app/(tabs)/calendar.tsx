@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Pressable, ScrollView, Alert, Animated } from "react-native";
+import { View, Pressable, ScrollView, Animated } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -7,6 +7,7 @@ import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { Icon } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
 import { AppointmentSheet } from "@/components/calendar/AppointmentSheet";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import { takePendingBooking } from "@/lib/bookingResult";
@@ -90,22 +91,19 @@ export default function CalendarScreen() {
   const [sheetAppt, setSheetAppt] = useState<Appointment | null>(null);
   function openAppt(a: Appointment) { setSheetAppt(a); }
 
-  function confirmCancel(a: Appointment) {
-    Alert.alert(
-      "Cancel appointment?",
-      `${a.clientName} · ${a.serviceName ?? "Appointment"}. This cancels it in Square too.`,
-      [
-        { text: "Keep it", style: "cancel" },
-        {
-          text: "Cancel appointment", style: "destructive",
-          onPress: async () => {
-            const res = await cancelBooking(a.id);
-            if (res.ok) { reload(); toast.show("Appointment canceled", { icon: "trash", tone: "info" }); }
-            else Alert.alert("Couldn't cancel", res.error ?? "Try again.");
-          },
-        },
-      ],
-    );
+  // Cancel confirmation uses our custom ConfirmDialog (not the bare iOS Alert).
+  const [cancelAppt, setCancelAppt] = useState<Appointment | null>(null);
+  const [canceling, setCanceling] = useState(false);
+  function confirmCancel(a: Appointment) { setCancelAppt(a); }
+  async function doCancel() {
+    const a = cancelAppt;
+    if (!a || canceling) return;
+    setCanceling(true);
+    const res = await cancelBooking(a.id);
+    setCanceling(false);
+    setCancelAppt(null);
+    if (res.ok) { reload(); toast.show("Appointment canceled", { icon: "trash", tone: "info" }); }
+    else toast.show(res.error ?? "Couldn't cancel — try again", { icon: "alert", tone: "info" });
   }
 
   // Reschedule: open Book prefilled with the SAME client + service + day, in
@@ -113,7 +111,7 @@ export default function CalendarScreen() {
   // succeeds — so backing out never loses the original appointment. Instant:
   // no awaiting a cancel here.
   function rescheduleAppt(a: Appointment) {
-    if (!a.client_id) { Alert.alert("Can't reschedule", "This appointment has no client on file."); return; }
+    if (!a.client_id) { toast.show("This appointment has no client on file", { icon: "alert", tone: "info" }); return; }
     const day = a.starts_at.slice(0, 10);
     const url =
       `/book?client=${a.client_id}&day=${day}` +
@@ -246,6 +244,17 @@ export default function CalendarScreen() {
         onViewClient={(a) => { setSheetAppt(null); if (a.client_id) router.push(`/client/${a.client_id}`); }}
         onEdit={(a) => { setSheetAppt(null); rescheduleAppt(a); }}
         onDelete={(a) => { setSheetAppt(null); confirmCancel(a); }}
+      />
+
+      <ConfirmDialog
+        visible={!!cancelAppt}
+        title="Cancel appointment?"
+        message={cancelAppt ? `${cancelAppt.clientName} · ${cancelAppt.serviceName ?? "Appointment"}. This cancels it in Square too.` : undefined}
+        confirmLabel={canceling ? "Canceling…" : "Cancel appointment"}
+        cancelLabel="Keep it"
+        destructive
+        onConfirm={doCancel}
+        onCancel={() => { if (!canceling) setCancelAppt(null); }}
       />
     </View>
   );
