@@ -7,3 +7,9 @@
 // verification" and we don't attempt a real connect. Flip to true once creds are
 // configured.
 export const WECHAT_LIVE = false;
+
+// SMS: provider not yet committed/approved. Provider-agnostic by design (Twilio
+// first recommendation, swappable). Stays NOT live until a provider account +
+// A2P 10DLC registration + a sending number exist. UI shows "Not set up" /
+// registration states; no real send is attempted. Flip when credentials land.
+export const SMS_LIVE = false;

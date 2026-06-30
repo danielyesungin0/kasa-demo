@@ -10,11 +10,11 @@ import { useCallback, useEffect, useState } from "react";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
 import { supabase, FUNCTIONS_URL } from "./supabase";
-import { WECHAT_LIVE } from "./config";
+import { WECHAT_LIVE, SMS_LIVE } from "./config";
 
 export type ConnState = "idle" | "connecting" | "connected" | "action_needed" | "pending";
 
-export type ProviderId = "square" | "instagram" | "wechat";
+export type ProviderId = "square" | "instagram" | "wechat" | "sms";
 
 export type ConnInfo = {
   state: ConnState;
@@ -26,7 +26,7 @@ export type ChannelsData = {
   conn: Record<ProviderId, ConnInfo>;
   refresh: () => Promise<void>;
   connectSquare: () => Promise<void>;
-  connectChannel: (id: "instagram" | "wechat") => Promise<void>;
+  connectChannel: (id: "instagram" | "wechat" | "sms") => Promise<void>;
   disconnect: (id: ProviderId) => Promise<void>;
 };
 
@@ -41,6 +41,7 @@ export function useChannels(): ChannelsData {
     square: { state: "idle" },
     instagram: { state: "idle" },
     wechat: { state: "idle" },
+    sms: { state: "idle" },
   });
 
   const refresh = useCallback(async () => {
@@ -51,14 +52,26 @@ export function useChannels(): ChannelsData {
       .maybeSingle();
     const { data: chans } = await supabase
       .from("channels")
-      .select("type, connected, status, external_account_id");
+      .select("type, connected, status, external_account_id, sms_number, sms_registration");
 
     const byType = new Map((chans ?? []).map((c: any) => [c.type, c]));
-    const channelInfo = (t: "instagram" | "wechat"): ConnInfo => {
+    const channelInfo = (t: "instagram" | "wechat" | "sms"): ConnInfo => {
       // WeChat is not live until OA verification is approved + credentials set.
-      // Show a "pending verification" state instead of a connect affordance.
       if (t === "wechat" && !WECHAT_LIVE) {
         return { state: "pending", label: "Verification in review" };
+      }
+      // SMS is not live until a provider account + A2P registration + number
+      // exist. Until then, reflect the registration lifecycle if a row exists,
+      // else "idle" (not set up).
+      if (t === "sms") {
+        if (!SMS_LIVE) return { state: "idle", label: "Not set up yet" };
+        const row: any = byType.get("sms");
+        const reg = row?.sms_registration;
+        if (reg === "provisioning") return { state: "connecting", label: "Setting up your number…" };
+        if (reg === "pending_review") return { state: "pending", label: "Carrier registration in review" };
+        if (reg === "rejected") return { state: "action_needed", label: "Registration needs attention" };
+        if (row?.connected && row.sms_number) return { state: "connected", label: row.sms_number };
+        return { state: "idle" };
       }
       const row: any = byType.get(t);
       if (!row) return { state: "idle" };
@@ -79,6 +92,7 @@ export function useChannels(): ChannelsData {
         : { state: "idle" },
       instagram: channelInfo("instagram"),
       wechat: channelInfo("wechat"),
+      sms: channelInfo("sms"),
     });
     setLoading(false);
   }, []);
@@ -147,7 +161,7 @@ export function useChannels(): ChannelsData {
     }
   }, [refresh]);
 
-  const connectChannel = useCallback(async (id: "instagram" | "wechat") => {
+  const connectChannel = useCallback(async (id: "instagram" | "wechat" | "sms") => {
     setState(id, { state: "connecting" });
 
     // Instagram: REAL Meta OAuth (instagram-oauth-start → Meta dialog → callback
@@ -196,6 +210,14 @@ export function useChannels(): ChannelsData {
       if (!WECHAT_LIVE) { await refresh(); return; }
       // (When live, the real WeChat connect flow — store AppID/secret + token —
       // slots in here.)
+      await refresh();
+      return;
+    }
+
+    // SMS: not connectable until a provider + A2P registration + number exist
+    // (SMS_LIVE). No-op for now — the UI shows "Coming soon". When live, the real
+    // provision/port + registration flow slots in here.
+    if (id === "sms") {
       await refresh();
       return;
     }

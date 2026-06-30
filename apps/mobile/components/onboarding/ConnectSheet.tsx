@@ -10,7 +10,9 @@ import { Icon } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
 import { colors, channels } from "@/theme/colors";
 
-type Provider = "square" | "instagram" | "wechat";
+// SMS is included for type-consistency with ProviderId; it never opens this
+// sheet today (gated to "Coming soon" until a provider is set up).
+type Provider = "square" | "instagram" | "wechat" | "sms";
 
 function Requirement({ text }: { text: React.ReactNode }) {
   return (
