@@ -19,7 +19,7 @@ const baseConfig: ExpoConfig = {
   ios: { supportsTablet: false, bundleIdentifier: "com.danielyesung.kasa" },
   android: { package: "com.danielyesung.kasa" },
   web: { bundler: "metro", output: "single" },
-  plugins: ["expo-router", "expo-font"],
+  plugins: ["expo-router", "expo-font", "expo-video"],
   experiments: { typedRoutes: true },
   extra: {
     supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? "",

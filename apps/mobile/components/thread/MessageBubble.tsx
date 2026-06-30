@@ -4,9 +4,11 @@
 // Honest send state: outgoing shows "Sending…" while optimistic and "Failed —
 // tap to retry" on failure. NO delivered/read (real delivery is a Phase-4 stub).
 import { View, Pressable } from "react-native";
+import { Image } from "expo-image";
 import { Icon } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
 import { colors } from "@/theme/colors";
+import { parseMedia } from "@/lib/media";
 import type { ThreadMessage } from "@/lib/useThread";
 
 function timeLabel(iso: string): string {
@@ -21,9 +23,11 @@ function timeLabel(iso: string): string {
 export function MessageBubble({
   msg,
   onRetry,
+  onOpenImage,
 }: {
   msg: ThreadMessage;
   onRetry?: (msg: ThreadMessage) => void;
+  onOpenImage?: (url: string) => void;
 }) {
   if (msg.direction === "note") {
     return (
@@ -41,20 +45,46 @@ export function MessageBubble({
   return (
     <View className={`mb-1.5 w-full ${out ? "items-end" : "items-start"}`}>
       <View style={{ maxWidth: "80%" }}>
-        {/* photos (media refs render as placeholder tiles, matching prototype) */}
-        {Array.isArray(msg.media) && msg.media.length > 0 ? (
-          <View className="mb-1.5 flex-row flex-wrap" style={{ gap: 5 }}>
-            {msg.media.map((_: unknown, i: number) => (
-              <View
-                key={i}
-                className="items-center justify-center rounded-control"
-                style={{ width: 70, height: 70, backgroundColor: out ? "rgba(255,255,255,0.22)" : colors.bgWarm }}
-              >
-                <Icon name="image" size={18} color={colors.ink4} />
-              </View>
-            ))}
-          </View>
-        ) : null}
+        {/* media — real images render as tappable thumbnails (→ fullscreen);
+            video shows a poster with a play badge; other files show a chip. */}
+        {(() => {
+          const media = parseMedia(msg.media);
+          if (media.length === 0) return null;
+          return (
+            <View className={`mb-1.5 flex-row flex-wrap ${out ? "justify-end" : ""}`} style={{ gap: 5 }}>
+              {media.map((m, i) => {
+                if (m.type === "image") {
+                  return (
+                    <Pressable key={i} onPress={() => onOpenImage?.(m.url)} accessibilityRole="imagebutton" accessibilityLabel="Photo">
+                      <Image
+                        source={{ uri: m.url }}
+                        style={{ width: 168, height: 168, borderRadius: 16, backgroundColor: colors.bgWarm }}
+                        contentFit="cover"
+                        transition={120}
+                      />
+                    </Pressable>
+                  );
+                }
+                if (m.type === "video") {
+                  return (
+                    <Pressable key={i} onPress={() => onOpenImage?.(m.url)} accessibilityRole="button" accessibilityLabel="Video"
+                      className="items-center justify-center rounded-2xl" style={{ width: 168, height: 168, backgroundColor: "#000" }}>
+                      <View className="items-center justify-center rounded-full" style={{ width: 46, height: 46, backgroundColor: "rgba(255,255,255,0.85)" }}>
+                        <Icon name="send" size={20} color={colors.ink} />
+                      </View>
+                    </Pressable>
+                  );
+                }
+                return (
+                  <View key={i} className="flex-row items-center rounded-control bg-surface-2 px-3 py-2" style={{ gap: 7 }}>
+                    <Icon name="ext" size={15} color={colors.ink3} />
+                    <Text className="text-ink-2" style={{ fontSize: 13 }}>Attachment</Text>
+                  </View>
+                );
+              })}
+            </View>
+          );
+        })()}
 
         {msg.body ? (
           <View

@@ -17,6 +17,7 @@ import { Text } from "@/components/ui/Text";
 import { Skeleton, ThreadSkeleton } from "@/components/ui/Skeleton";
 import { Composer } from "@/components/thread/Composer";
 import { MessageBubble } from "@/components/thread/MessageBubble";
+import { ImageViewer } from "@/components/ui/ImageViewer";
 import { BookingNudge, shouldShowNudge } from "@/components/thread/BookingNudge";
 import { useThread, type ThreadMessage } from "@/lib/useThread";
 import { channelState } from "@/lib/channelState";
@@ -29,6 +30,7 @@ export default function ThreadScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList>(null);
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
   // Measure the real header height so KeyboardAvoidingView's offset is exact
   // (a hardcoded guess left a gap between the keyboard and the input).
 
@@ -150,7 +152,7 @@ export default function ThreadScreen() {
           keyExtractor={(m) => m.id}
           className="flex-1"
           contentContainerStyle={{ padding: 16, paddingBottom: 14 }}
-          renderItem={({ item }) => <MessageBubble msg={item} onRetry={retry} />}
+          renderItem={({ item }) => <MessageBubble msg={item} onRetry={retry} onOpenImage={setViewerUrl} />}
           onContentSizeChange={scrollToEnd}
           showsVerticalScrollIndicator={false}
         />
@@ -197,6 +199,7 @@ export default function ThreadScreen() {
           initialDraft={draft ?? null}
         />
       </View>
+      <ImageViewer url={viewerUrl} onClose={() => setViewerUrl(null)} />
     </KeyboardAvoidingView>
   );
 }
