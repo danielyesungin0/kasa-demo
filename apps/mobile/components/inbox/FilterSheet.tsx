@@ -1,8 +1,7 @@
-// FilterSheet — the inbox "Filters" bottom sheet (Instagram pattern, in Kasa's
-// design language). Sectioned rows with an icon, label, and a right-side radio
-// that fills when selected. Two groups: STATUS (All / Unread / Booking requests)
-// and CHANNEL (All channels + each connected channel). Single-select within each
-// group. A "Reset" action clears both back to "all".
+// FilterSheet — the inbox "Filter by channel" bottom sheet (in Kasa's design
+// language). Status filters live as quick-tap pills in the header; the channel
+// filter (the occasional one) lives here: All channels + each connected channel
+// as rows with a right-side radio that fills when selected.
 import { useEffect, useRef } from "react";
 import { Modal, View, Pressable, Animated, Easing, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -12,14 +11,9 @@ import { ChannelDot } from "@/components/ui/ChannelDot";
 import { colors, channels } from "@/theme/colors";
 import type { InboxItem } from "@/lib/types";
 
+// StatusKey stays here so the inbox can import both filter types from one place.
 export type StatusKey = "all" | "unread" | "booking";
 export type ChannelKey = "all" | InboxItem["channel_type"];
-
-const STATUS_ROWS: { key: StatusKey; label: string; icon: IconName }[] = [
-  { key: "all", label: "All messages", icon: "inbox" },
-  { key: "unread", label: "Unread", icon: "mail" },
-  { key: "booking", label: "Booking requests", icon: "calendar" },
-];
 
 function Radio({ on }: { on: boolean }) {
   return (
@@ -34,21 +28,15 @@ function Radio({ on }: { on: boolean }) {
 
 export function FilterSheet({
   visible,
-  status,
   channel,
   presentChannels,
-  onStatus,
   onChannel,
-  onReset,
   onClose,
 }: {
   visible: boolean;
-  status: StatusKey;
   channel: ChannelKey;
   presentChannels: InboxItem["channel_type"][];
-  onStatus: (s: StatusKey) => void;
   onChannel: (c: ChannelKey) => void;
-  onReset: () => void;
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -80,7 +68,8 @@ export function FilterSheet({
     </Pressable>
   );
 
-  const dirty = status !== "all" || channel !== "all";
+  // Selecting a channel applies + closes (single-tap, like a picker).
+  const pick = (c: ChannelKey) => { onChannel(c); onClose(); };
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
@@ -93,32 +82,16 @@ export function FilterSheet({
           <View className="items-center pt-2.5 pb-1">
             <View style={{ width: 38, height: 5, borderRadius: 3, backgroundColor: colors.line2 }} />
           </View>
-          <View className="flex-row items-center justify-between px-gutter pb-2 pt-1.5">
-            <Text variant="title">Filters</Text>
-            {dirty ? (
-              <Pressable onPress={onReset} accessibilityRole="button" hitSlop={8}>
-                <Text style={{ fontSize: 14.5, fontFamily: "Inter_600SemiBold", color: colors.plumStrong }}>Reset</Text>
-              </Pressable>
-            ) : null}
+          <View className="px-gutter pb-2 pt-1.5">
+            <Text variant="title">Filter by channel</Text>
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false}>
-            <Text className="mx-gutter mb-1 mt-3 text-ink-4" style={{ fontSize: 12, fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>STATUS</Text>
-            {STATUS_ROWS.map((r) => (
-              <Row key={r.key} icon={r.icon} label={r.label} on={status === r.key} onPress={() => onStatus(r.key)} />
+            <View style={{ height: 4 }} />
+            <Row icon="inbox" label="All channels" on={channel === "all"} onPress={() => pick("all")} />
+            {presentChannels.map((c) => (
+              <Row key={c} dot={c} label={channels[c as keyof typeof channels]?.label ?? c} on={channel === c} onPress={() => pick(c)} />
             ))}
-
-            {/* Channel group — only meaningful with more than one channel. */}
-            {presentChannels.length > 1 ? (
-              <>
-                <Text className="mx-gutter mb-1 mt-4 text-ink-4" style={{ fontSize: 12, fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>CHANNEL</Text>
-                <Row icon="inbox" label="All channels" on={channel === "all"} onPress={() => onChannel("all")} />
-                {presentChannels.map((c) => (
-                  <Row key={c} dot={c} label={channels[c as keyof typeof channels]?.label ?? c} on={channel === c} onPress={() => onChannel(c)} />
-                ))}
-              </>
-            ) : null}
-
             <View style={{ height: 8 }} />
           </ScrollView>
         </View>

@@ -16,6 +16,13 @@ import type { InboxItem } from "@/lib/types";
 const channelLabel = (c: InboxItem["channel_type"]) =>
   channels[c as keyof typeof channels]?.label ?? c;
 
+// Status filters live as quick-tap pills; channel filter lives in the sheet.
+const STATUS_PILLS: { key: StatusKey; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "unread", label: "Unread" },
+  { key: "booking", label: "Booking requests" },
+];
+
 const TAB_BAR_HEIGHT = 60;
 
 export default function InboxScreen() {
@@ -34,8 +41,6 @@ export default function InboxScreen() {
     () => Array.from(new Set(items.map((i) => i.channel_type))),
     [items],
   );
-  const activeCount = (status !== "all" ? 1 : 0) + (channel !== "all" ? 1 : 0);
-
   const list = useMemo(() => {
     let l = items;
     if (status === "unread") l = l.filter((i) => i.unread);
@@ -68,52 +73,50 @@ export default function InboxScreen() {
     <View className="flex-1 bg-bg" style={{ paddingTop: insets.top }}>
       {/* header */}
       <View className="px-gutter pb-2.5 pt-3">
-        <View className="mb-3 flex-row items-center justify-between" style={{ minHeight: 40 }}>
+        <View className="mb-3" style={{ minHeight: 40, justifyContent: "center" }}>
           <Text variant="title">Inbox</Text>
-          {/* one Filters button → opens the Filters bottom sheet (Instagram
-              pattern). Badge shows how many filters are active. */}
-          <Pressable
-            onPress={() => setFilterOpen(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Filters"
-            className={`flex-row items-center rounded-pill border px-3.5 ${activeCount > 0 ? "border-ink bg-ink" : "border-line-2 bg-surface"}`}
-            style={{ minHeight: 36, gap: 7 }}
-          >
-            <Icon name="merge" size={15} color={activeCount > 0 ? "#fff" : colors.ink2} />
-            <Text style={{ fontSize: 13.5, fontFamily: "Inter_600SemiBold", color: activeCount > 0 ? "#fff" : colors.ink2 }}>
-              Filters
-            </Text>
-            {activeCount > 0 ? (
-              <View className="items-center justify-center rounded-full bg-white" style={{ minWidth: 18, height: 18, paddingHorizontal: 4 }}>
-                <Text tabular style={{ fontSize: 11, fontFamily: "Inter_700Bold", color: colors.ink }}>{activeCount}</Text>
-              </View>
-            ) : null}
-          </Pressable>
         </View>
 
         {/* search — filters by client name or message text */}
         <SearchBar value={query} onChangeText={setQuery} placeholder="Search messages" />
 
-        {/* active-filter chips — show what's applied (controls live in the sheet);
-            each chip is tappable to clear that one. */}
-        {activeCount > 0 ? (
-          <View className="mt-3 flex-row" style={{ gap: 8 }}>
-            {status !== "all" ? (
-              <Pressable onPress={() => setStatus("all")} accessibilityRole="button" className="flex-row items-center rounded-pill bg-ink px-3" style={{ minHeight: 32, gap: 6 }}>
-                <Text className="text-white" style={{ fontSize: 12.5, fontFamily: "Inter_600SemiBold" }}>
-                  {status === "unread" ? "Unread" : "Booking requests"}
+        {/* status pills (quick taps) + a channel-filter button on the right.
+            Channel lives in a bottom sheet since it's the occasional one. */}
+        <View className="mt-3 flex-row items-center" style={{ gap: 8 }}>
+          {STATUS_PILLS.map((p) => {
+            const on = status === p.key;
+            return (
+              <Pressable
+                key={p.key}
+                onPress={() => setStatus(p.key)}
+                accessibilityRole="button"
+                accessibilityState={on ? { selected: true } : {}}
+                className={`rounded-pill border px-4 ${on ? "border-ink bg-ink" : "border-line-2 bg-surface"}`}
+                style={{ paddingVertical: 8, minHeight: 36 }}
+              >
+                <Text className={on ? "text-white" : "text-ink-2"} style={{ fontSize: 13.5, fontFamily: "Inter_500Medium" }}>
+                  {p.label}
                 </Text>
-                <Icon name="x" size={12} color="#fff" />
               </Pressable>
-            ) : null}
-            {channel !== "all" ? (
-              <Pressable onPress={() => setChannel("all")} accessibilityRole="button" className="flex-row items-center rounded-pill bg-ink px-3" style={{ minHeight: 32, gap: 6 }}>
-                <Text className="text-white" style={{ fontSize: 12.5, fontFamily: "Inter_600SemiBold" }}>{channelLabel(channel)}</Text>
-                <Icon name="x" size={12} color="#fff" />
-              </Pressable>
-            ) : null}
-          </View>
-        ) : null}
+            );
+          })}
+          <View style={{ flex: 1 }} />
+          {/* channel filter → bottom sheet. Only shown when there's >1 channel. */}
+          {presentChannels.length > 1 ? (
+            <Pressable
+              onPress={() => setFilterOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Filter by channel"
+              className={`flex-row items-center rounded-pill border px-3 ${channel !== "all" ? "border-ink bg-ink" : "border-line-2 bg-surface"}`}
+              style={{ minHeight: 36, gap: 6 }}
+            >
+              <Icon name="merge" size={14} color={channel !== "all" ? "#fff" : colors.ink2} />
+              <Text style={{ fontSize: 13, fontFamily: "Inter_600SemiBold", color: channel !== "all" ? "#fff" : colors.ink2 }}>
+                {channel === "all" ? "Channel" : channelLabel(channel)}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
       </View>
 
       {/* list (virtualized) */}
@@ -159,12 +162,9 @@ export default function InboxScreen() {
 
       <FilterSheet
         visible={filterOpen}
-        status={status}
         channel={channel}
         presentChannels={presentChannels}
-        onStatus={setStatus}
         onChannel={setChannel}
-        onReset={() => { setStatus("all"); setChannel("all"); }}
         onClose={() => setFilterOpen(false)}
       />
     </View>
