@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html, body {
+  background: #F4F0E9;
+  color: #211D18;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Hide scrollbars on the horizontal chip rows, keep scroll */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
