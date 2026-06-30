@@ -78,15 +78,13 @@ export function InboxRow({
         accessibilityRole="button"
         accessibilityLabel={`Conversation with ${item.client.name}`}
         className="flex-row items-center bg-surface active:bg-surface-2"
-        style={{ paddingVertical: 14, paddingLeft: 10, paddingRight: 18, gap: 8, minHeight: 72 }}
+        style={{ paddingVertical: 14, paddingLeft: 20, paddingRight: 18, gap: 12, minHeight: 72 }}
       >
-        {/* unread dot — a fixed-width centered column on the left (iMessage-style),
-            so the avatar/text always align whether or not the dot is shown. */}
-        <View style={{ width: 14, alignItems: "center", justifyContent: "center" }}>
-          {unread ? (
-            <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: colors.accent }} />
-          ) : null}
-        </View>
+        {/* unread dot — overlaid in the left gutter so the avatar starts flush at
+            the 20px gutter (aligned with the header title + filter pills). */}
+        {unread ? (
+          <View style={{ position: "absolute", left: 7, top: "50%", marginTop: -4, width: 8, height: 8, borderRadius: 4, backgroundColor: colors.accent }} />
+        ) : null}
 
         {/* avatar + channel dot bottom-right */}
         <View style={{ width: 48, height: 48, alignItems: "center", justifyContent: "center" }}>
@@ -135,7 +133,7 @@ export function InboxRow({
         </View>
       </Pressable>
       {showDivider ? (
-        <View style={{ height: 1, backgroundColor: colors.line, marginLeft: 88 }} />
+        <View style={{ height: 1, backgroundColor: colors.line, marginLeft: 80 }} />
       ) : null}
     </Swipeable>
   );

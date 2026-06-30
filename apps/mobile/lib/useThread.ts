@@ -27,11 +27,18 @@ export function useThread(conversationId: string) {
   const pending = useRef<ThreadMessage[]>([]); // optimistic, not yet in DB
 
   const merge = useCallback((dbRows: MessageRow[]) => {
-    // DB rows are the source of truth; keep any still-pending optimistic rows —
-    // but ONLY ones for THIS conversation. (pending persisted across threads,
-    // so messages sent in one chat were leaking into others.)
-    const mine = pending.current.filter((m) => m.conversation_id === conversationId);
-    setMessages([...dbRows, ...mine]);
+    // DB rows are the source of truth. Keep optimistic rows for THIS conversation
+    // ONLY while the server hasn't echoed them yet — otherwise the optimistic
+    // bubble + the real DB row both show (the duplicate flicker). Match an
+    // optimistic 'out' row to a db 'out' row with the same body to drop it.
+    const dbOut = dbRows.filter((r) => r.direction === "out");
+    const stillPending = pending.current.filter(
+      (m) =>
+        m.conversation_id === conversationId &&
+        !dbOut.some((r) => (r.body ?? "") === (m.body ?? "")),
+    );
+    pending.current = stillPending;
+    setMessages([...dbRows, ...stillPending]);
   }, [conversationId]);
 
   // Reset optimistic state whenever the open conversation changes, so a pending
