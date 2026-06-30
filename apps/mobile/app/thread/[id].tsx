@@ -87,19 +87,33 @@ export default function ThreadScreen() {
   }
 
   // Send a picked/recorded media file: show it instantly (local uri), upload to
-  // Storage, then send the public URL. If upload/send fails, mark failed.
+  // Storage, then send the public URL. On failure, mark the bubble failed AND
+  // surface an honest reason (so a silent "failed" isn't a mystery).
   async function sendMedia(localUri: string, type: "image" | "video" | "audio") {
     const tempId = appendOptimistic("", { type, url: localUri });
     scrollToEnd();
     const url = await uploadMedia(localUri, type);
-    if (!url) { reconcile(tempId, "failed"); return; }
+    if (!url) {
+      reconcile(tempId, "failed");
+      toast.show("Upload failed — check your connection", { icon: "alert", tone: "info" });
+      return;
+    }
     const result = await sendMessage(id, "", { type, url });
-    if (result.ok) reconcile(tempId, "sent");
-    else if (result.blocked) {
+    if (result.ok) { reconcile(tempId, "sent"); return; }
+    if (result.blocked) {
       dropOptimistic(tempId);
       const label = result.channel ? channels[result.channel as keyof typeof channels].label : "the channel";
       setWindowBanner(`Reply window closed — open ${label} to continue.`);
-    } else reconcile(tempId, "failed");
+      return;
+    }
+    reconcile(tempId, "failed");
+    // Instagram rejects some media (esp. voice/long video) even in an open
+    // window — tell the stylist honestly instead of a silent fail.
+    const why =
+      type === "audio" ? "Instagram didn't accept this voice message"
+      : type === "video" ? "Instagram didn't accept this video"
+      : "Instagram didn't accept this photo";
+    toast.show(why, { icon: "alert", tone: "info" });
   }
 
   // Composer media actions: camera, photo library, voice memo.

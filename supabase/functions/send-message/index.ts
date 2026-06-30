@@ -86,7 +86,7 @@ Deno.serve(async (req) => {
   }
 
   // ── Dispatch via the channel API ──
-  let sendResult: { ok: boolean; providerId?: string; error?: string };
+  let sendResult: { ok: boolean; providerId?: string; error?: string; detail?: string };
   if (convo.channel_type === "instagram") {
     sendResult = await sendInstagram(admin, convo, text, media);
   } else {
@@ -102,6 +102,7 @@ Deno.serve(async (req) => {
       message_id: msg.id,
       reason: "send_failed",
       detail: sendResult.error ?? "provider_error",
+      meta_detail: sendResult.detail ?? null,
       channel: convo.channel_type,
     });
   }
@@ -126,7 +127,7 @@ async function sendInstagram(
   convo: any,
   text: string,
   media: { type: "image" | "video" | "audio"; url: string } | null,
-): Promise<{ ok: boolean; providerId?: string; error?: string }> {
+): Promise<{ ok: boolean; providerId?: string; error?: string; detail?: string }> {
   const recipientId = convo.external_thread_id;
   if (!recipientId) return { ok: false, error: "no_recipient" };
 
@@ -152,7 +153,7 @@ async function sendInstagram(
   // IG sends text and attachment as SEPARATE messages. Send the attachment
   // first (the substance), then any caption text. The provider id we return is
   // the attachment's if present, else the text's.
-  async function post(message: unknown): Promise<{ ok: boolean; providerId?: string; error?: string }> {
+  async function post(message: unknown): Promise<{ ok: boolean; providerId?: string; error?: string; detail?: string }> {
     try {
       const res = await fetch(url, {
         method: "POST",
@@ -162,8 +163,10 @@ async function sendInstagram(
       const data = await res.json();
       if (!res.ok) {
         const code = data?.error?.code ?? "unknown";
-        console.error("[send] Instagram send failed", res.status, code);
-        return { ok: false, error: `meta_${code}` };
+        const sub = data?.error?.error_subcode ?? "";
+        const detail = data?.error?.message ?? "";
+        console.error("[send] Instagram send failed", res.status, code, sub, detail);
+        return { ok: false, error: `meta_${code}${sub ? "_" + sub : ""}`, detail };
       }
       return { ok: true, providerId: data.message_id };
     } catch (e) {
