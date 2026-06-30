@@ -44,22 +44,33 @@ export function ConfirmDialog({
       <Animated.View style={{ flex: 1, backgroundColor: "rgba(20,16,12,0.45)", opacity: fade, alignItems: "center", justifyContent: "center", padding: 32 }}>
         <Pressable className="absolute inset-0" onPress={onCancel} accessibilityRole="button" accessibilityLabel="Dismiss" />
         <Animated.View
-          style={{ width: "100%", maxWidth: 340, transform: [{ scale }] }}
-          className="overflow-hidden rounded-card bg-surface"
+          style={{ width: "100%", maxWidth: 360, transform: [{ scale }] }}
+          className="rounded-card bg-surface px-6 pt-7 pb-6"
         >
-          <View className="px-5 pt-5 pb-4">
-            <Text style={{ fontSize: 17, fontFamily: "Inter_700Bold", color: colors.ink, textAlign: "center" }}>{title}</Text>
-            {message ? (
-              <Text className="text-ink-3" style={{ fontSize: 14, lineHeight: 20, textAlign: "center", marginTop: 8 }}>{message}</Text>
-            ) : null}
-          </View>
-          <View className="flex-row border-t border-line">
-            <Pressable onPress={onCancel} accessibilityRole="button" className="flex-1 items-center justify-center active:bg-surface-2" style={{ height: 52 }}>
-              <Text style={{ fontSize: 16, fontFamily: "Inter_600SemiBold", color: colors.ink2 }}>{cancelLabel}</Text>
+          {/* copy — generous breathing room */}
+          <Text style={{ fontSize: 19, fontFamily: "Inter_700Bold", color: colors.ink, textAlign: "center" }}>{title}</Text>
+          {message ? (
+            <Text className="text-ink-3" style={{ fontSize: 14.5, lineHeight: 21, textAlign: "center", marginTop: 10 }}>{message}</Text>
+          ) : null}
+
+          {/* stacked full-width pill buttons (Instagram/modern pattern):
+              primary action on top, cancel below — big tap targets, not cramped. */}
+          <View style={{ gap: 10, marginTop: 24 }}>
+            <Pressable
+              onPress={onConfirm}
+              accessibilityRole="button"
+              className="items-center justify-center rounded-pill active:opacity-90"
+              style={{ height: 52, backgroundColor: destructive ? colors.err : colors.plumStrong }}
+            >
+              <Text style={{ fontSize: 16, fontFamily: "Inter_700Bold", color: "#fff" }}>{confirmLabel}</Text>
             </Pressable>
-            <View className="w-px bg-line" />
-            <Pressable onPress={onConfirm} accessibilityRole="button" className="flex-1 items-center justify-center active:bg-surface-2" style={{ height: 52 }}>
-              <Text style={{ fontSize: 16, fontFamily: "Inter_700Bold", color: destructive ? colors.errInk : colors.plumStrong }}>{confirmLabel}</Text>
+            <Pressable
+              onPress={onCancel}
+              accessibilityRole="button"
+              className="items-center justify-center rounded-pill bg-bg-warm active:bg-surface-2"
+              style={{ height: 52 }}
+            >
+              <Text style={{ fontSize: 16, fontFamily: "Inter_600SemiBold", color: colors.ink2 }}>{cancelLabel}</Text>
             </Pressable>
           </View>
         </Animated.View>
