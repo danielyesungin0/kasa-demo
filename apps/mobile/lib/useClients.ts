@@ -28,6 +28,13 @@ export type ClientConvo = {
   preview: string | null;
 };
 
+export type ClientAppt = {
+  id: string;
+  starts_at: string;
+  ends_at: string;
+  service_name: string | null;
+};
+
 export function useClients() {
   const { session } = useAuth();
   const [items, setItems] = useState<ClientRow[]>([]);
@@ -54,6 +61,7 @@ export function useClientProfile(id: string | undefined) {
   const [client, setClient] = useState<ClientRow | null>(null);
   const [convos, setConvos] = useState<ClientConvo[]>([]);
   const [channels, setChannels] = useState<ChannelType[]>([]);
+  const [upcoming, setUpcoming] = useState<ClientAppt[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -65,6 +73,28 @@ export function useClientProfile(id: string | undefined) {
         .eq("id", id)
         .maybeSingle();
       setClient((c as ClientRow) ?? null);
+
+      // Upcoming bookings (not canceled, starting from now), soonest first.
+      const { data: appts } = await supabase
+        .from("appointments")
+        .select("id, starts_at, ends_at, service_name, service_id")
+        .eq("client_id", id)
+        .neq("status", "canceled")
+        .gte("starts_at", new Date().toISOString())
+        .order("starts_at", { ascending: true })
+        .limit(10);
+      const arows = (appts ?? []) as any[];
+      // Resolve service names from the catalog where service_name is missing.
+      const sids = Array.from(new Set(arows.map((a) => a.service_id).filter(Boolean)));
+      const sname = new Map<string, string>();
+      if (sids.length) {
+        const { data: svcs } = await supabase.from("provider_services").select("id, name").in("id", sids);
+        for (const s of (svcs ?? []) as any[]) sname.set(s.id, s.name);
+      }
+      setUpcoming(arows.map((a) => ({
+        id: a.id, starts_at: a.starts_at, ends_at: a.ends_at,
+        service_name: (a.service_id && sname.get(a.service_id)) || a.service_name || null,
+      })));
 
       const { data: conv } = await supabase
         .from("conversations")
@@ -100,5 +130,5 @@ export function useClientProfile(id: string | undefined) {
     })();
   }, [id]);
 
-  return { client, convos, channels, loading };
+  return { client, convos, channels, upcoming, loading };
 }

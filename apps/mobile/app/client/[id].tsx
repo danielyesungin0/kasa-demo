@@ -17,7 +17,7 @@ export default function ClientScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { client: c, convos, channels, loading } = useClientProfile(id);
+  const { client: c, convos, channels, upcoming, loading } = useClientProfile(id);
 
   if (loading || !c) {
     return (
@@ -92,6 +92,39 @@ export default function ClientScreen() {
           <View className="w-px bg-line" />
           <Stat n={sinceLabel} label="Since" />
         </View>
+
+        {/* upcoming bookings → tap to view on the calendar */}
+        {upcoming.length ? (
+          <View className="mx-gutter mt-5">
+            <Text className="mb-2 text-ink-4" style={{ fontSize: 12, fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>UPCOMING</Text>
+            <View className="overflow-hidden rounded-card border border-line bg-surface">
+              {upcoming.map((a, i) => {
+                const d = new Date(a.starts_at);
+                const date = d.toLocaleDateString("en-US", { timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric" });
+                const time = d.toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit", hour12: true });
+                const dayKey = a.starts_at.slice(0, 10);
+                return (
+                  <Pressable
+                    key={a.id}
+                    onPress={() => router.push(`/(tabs)/calendar?day=${dayKey}&highlight=${a.id}`)}
+                    accessibilityRole="button"
+                    className={`flex-row items-center px-4 py-3.5 active:bg-surface-2 ${i > 0 ? "border-t border-line" : ""}`}
+                    style={{ gap: 12, minHeight: 56 }}
+                  >
+                    <View className="items-center justify-center rounded-control" style={{ width: 42, height: 42, backgroundColor: colors.plumSoft }}>
+                      <Icon name="calendar" size={18} color={colors.plumStrong} />
+                    </View>
+                    <View className="flex-1" style={{ minWidth: 0 }}>
+                      <Text numberOfLines={1} style={{ fontSize: 14.5, fontFamily: "Inter_600SemiBold", color: colors.ink }}>{a.service_name ?? "Appointment"}</Text>
+                      <Text className="text-ink-3" style={{ fontSize: 12.5, marginTop: 1 }}>{date} · {time}</Text>
+                    </View>
+                    <Icon name="chevR" size={16} color={colors.ink4} />
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        ) : null}
 
         {/* preferences */}
         {c.preferences ? (

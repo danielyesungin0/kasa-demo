@@ -212,6 +212,7 @@ export default function ThreadScreen() {
           onSend={doSend}
           onBook={() => router.push(`/book?conversation=${id}`)} // → Book sheet
           onOpenExternal={openExternal}
+          onAttach={() => toast.show("Sending media is coming soon", { icon: "image", tone: "info" })}
           initialDraft={seededDraft}
         />
       </View>

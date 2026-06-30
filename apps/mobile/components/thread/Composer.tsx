@@ -19,12 +19,14 @@ export function Composer({
   onSend,
   onBook,
   onOpenExternal,
+  onAttach,
   initialDraft,
 }: {
   state: ChannelState;
   onSend: (text: string) => void;
   onBook: () => void;
   onOpenExternal: () => void;
+  onAttach?: (kind: "camera" | "photo" | "voice") => void;
   initialDraft?: string | null;
 }) {
   const insets = useSafeAreaInsets();
@@ -90,6 +92,7 @@ export function Composer({
               style={{ fontFamily: "Inter_400Regular", maxHeight: 96, paddingHorizontal: 6, paddingVertical: 9 }}
             />
             {hasText ? (
+              // Typing → media options collapse, Send appears (Instagram pattern).
               <Pressable
                 onPress={handleSend}
                 accessibilityRole="button"
@@ -99,7 +102,22 @@ export function Composer({
               >
                 <Icon name="send" size={18} color="#fff" />
               </Pressable>
-            ) : null}
+            ) : (
+              // Empty → quick media options (camera, photo, voice). Wired to a
+              // shared not-yet-available handler for now; the layout + behavior
+              // (collapse on typing) is the deliverable.
+              <View className="flex-row items-center" style={{ gap: 2 }}>
+                <Pressable onPress={() => onAttach?.("camera")} accessibilityRole="button" accessibilityLabel="Camera" className="items-center justify-center" style={{ width: 36, height: 40 }}>
+                  <Icon name="camera" size={21} color={colors.ink3} />
+                </Pressable>
+                <Pressable onPress={() => onAttach?.("photo")} accessibilityRole="button" accessibilityLabel="Photo" className="items-center justify-center" style={{ width: 36, height: 40 }}>
+                  <Icon name="image" size={21} color={colors.ink3} />
+                </Pressable>
+                <Pressable onPress={() => onAttach?.("voice")} accessibilityRole="button" accessibilityLabel="Voice message" className="items-center justify-center" style={{ width: 36, height: 40 }}>
+                  <Icon name="mic" size={21} color={colors.ink3} />
+                </Pressable>
+              </View>
+            )}
           </>
         ) : (
           // Closed window: swap the field for the honest open-externally CTA.
