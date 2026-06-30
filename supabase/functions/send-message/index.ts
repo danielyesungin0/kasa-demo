@@ -20,6 +20,7 @@
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { decryptSecret } from "../_shared/crypto.ts";
+import { ensureFreshWeChatToken, WECHAT_API } from "../_shared/wechat-token.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -89,9 +90,11 @@ Deno.serve(async (req) => {
   let sendResult: { ok: boolean; providerId?: string; error?: string; detail?: string };
   if (convo.channel_type === "instagram") {
     sendResult = await sendInstagram(admin, convo, text, media);
+  } else if (convo.channel_type === "wechat") {
+    sendResult = await sendWeChat(admin, convo, text);
   } else {
-    // WeChat/SMS/Kakao not yet wired — mark sent locally (no provider) so the
-    // app still works for those channels in dev; real sends are later chunks.
+    // SMS/Kakao not yet wired — mark sent locally (no provider) so the app
+    // still works for those channels in dev; real sends are later chunks.
     sendResult = { ok: true };
   }
 
@@ -188,4 +191,43 @@ async function sendInstagram(
     providerId = providerId ?? r.providerId;
   }
   return { ok: true, providerId };
+}
+
+// Send a WeChat Official Account customer-service message. Requires a fresh
+// app access_token (managed in _shared/wechat-token.ts). The recipient is the
+// user's openid, stored as conversation.external_thread_id. Only valid within
+// WeChat's 48h service-message window (we already gate on window_expires_at).
+// deno-lint-ignore no-explicit-any
+async function sendWeChat(
+  admin: any,
+  convo: any,
+  text: string,
+): Promise<{ ok: boolean; providerId?: string; error?: string }> {
+  const openid = convo.external_thread_id;
+  if (!openid) return { ok: false, error: "no_recipient" };
+  if (!text) return { ok: false, error: "wechat_text_required" }; // OA CS = text/media; media later
+
+  const tok = await ensureFreshWeChatToken(admin, convo.stylist_id);
+  if (!tok.ok) return { ok: false, error: tok.error };
+
+  try {
+    const res = await fetch(
+      `${WECHAT_API}/cgi-bin/message/custom/send?access_token=${encodeURIComponent(tok.accessToken)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // WeChat wants UTF-8 JSON; default JSON.stringify is fine.
+        body: JSON.stringify({ touser: openid, msgtype: "text", text: { content: text } }),
+      },
+    );
+    const data = await res.json();
+    if (data.errcode && data.errcode !== 0) {
+      console.error("[send] WeChat send failed", data.errcode, data.errmsg);
+      return { ok: false, error: `wechat_${data.errcode}` };
+    }
+    return { ok: true };
+  } catch (e) {
+    console.error("[send] WeChat send threw", (e as Error).name);
+    return { ok: false, error: "wechat_unreachable" };
+  }
 }

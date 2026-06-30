@@ -20,11 +20,26 @@ import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { type InboundMessage, normalizeInbound } from "../_shared/inbound.ts";
 
-// TODO(verify): verify WeChat's signature — sha1 of sorted [token, timestamp,
-// nonce] must equal the `signature` query param. Token = WECHAT_WEBHOOK_TOKEN.
-// Used for BOTH the GET handshake and POST messages. Implement in Phase 4.
-function verifyWeChatSignature(_params: URLSearchParams): boolean {
-  return false;
+// Verify WeChat's signature: sha1 of the sorted [token, timestamp, nonce]
+// joined, compared to the `signature` query param. Token = WECHAT_WEBHOOK_TOKEN
+// (set by you, and entered identically in the WeChat Official Account server
+// config). Used for BOTH the GET handshake and POST messages.
+async function sha1Hex(input: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function verifyWeChatSignature(params: URLSearchParams): Promise<boolean> {
+  const token = Deno.env.get("WECHAT_WEBHOOK_TOKEN");
+  if (!token) {
+    console.error("[wechat] WECHAT_WEBHOOK_TOKEN not set");
+    return false;
+  }
+  const signature = params.get("signature") ?? "";
+  const timestamp = params.get("timestamp") ?? "";
+  const nonce = params.get("nonce") ?? "";
+  const expected = await sha1Hex([token, timestamp, nonce].sort().join(""));
+  return expected === signature;
 }
 
 /** Pull a single tag's text out of WeChat XML (handles CDATA). */
@@ -65,11 +80,12 @@ Deno.serve(async (req) => {
 
   const url = new URL(req.url);
 
-  // WeChat setup handshake: GET with echostr — echo it back when signature ok.
+  // WeChat setup handshake: GET with echostr — echo it back ONLY when the
+  // signature is valid (this is how WeChat confirms you own the callback URL).
   if (req.method === "GET") {
-    const echostr = url.searchParams.get("echostr") ?? "";
-    // TODO(verify): require verifyWeChatSignature(url.searchParams) here.
-    return new Response(echostr, { status: 200 });
+    const ok = await verifyWeChatSignature(url.searchParams);
+    if (!ok) return new Response("invalid signature", { status: 403 });
+    return new Response(url.searchParams.get("echostr") ?? "", { status: 200 });
   }
 
   if (req.method !== "POST") {
@@ -77,7 +93,12 @@ Deno.serve(async (req) => {
   }
 
   const rawBody = await req.text(); // XML
-  const signatureVerified = verifyWeChatSignature(url.searchParams);
+  const signatureVerified = await verifyWeChatSignature(url.searchParams);
+  // Reject unsigned POSTs (don't normalize untrusted data into the inbox).
+  if (!signatureVerified) {
+    console.error("[wechat] rejected POST: bad signature");
+    return new Response("success", { status: 200 }); // 200 so WeChat stops retrying
+  }
 
   const msg = parseWeChat(rawBody);
   if (!msg) {
