@@ -15,10 +15,16 @@ export function MonthCalendar({
   selectedKey,
   onSelect,
   isDisabled,
+  markedDays,
+  allowPast = false,
 }: {
   selectedKey: string;
   onSelect: (key: string) => void;
   isDisabled?: (key: string) => boolean;
+  /** dateKeys that have something (e.g. bookings) → show a dot under the date */
+  markedDays?: Set<string>;
+  /** allow selecting days before today (Calendar tab browses the past; Book doesn't) */
+  allowPast?: boolean;
 }) {
   const today = todayKey();
   const sel = parseKey(selectedKey);
@@ -34,9 +40,9 @@ export function MonthCalendar({
     if (m > 11) { m = 0; y += 1; }
     setMonthIdx(m); setYear(y);
   }
-  // Don't page before the current month.
+  // Don't page before the current month (unless past browsing is allowed).
   const t = parseKey(today);
-  const atFloor = year === t.y && monthIdx === t.mo - 1;
+  const atFloor = !allowPast && year === t.y && monthIdx === t.mo - 1;
 
   return (
     <View>
@@ -66,9 +72,10 @@ export function MonthCalendar({
       <View className="flex-row flex-wrap">
         {cells.map((cell, i) => {
           if (!cell) return <View key={i} style={{ width: `${100 / 7}%`, height: 42 }} />;
-          const past = cell.key < today;
+          const past = !allowPast && cell.key < today;
           const disabled = past || (isDisabled?.(cell.key) ?? false);
           const on = cell.key === selectedKey;
+          const marked = markedDays?.has(cell.key) ?? false;
           return (
             <View key={i} style={{ width: `${100 / 7}%`, height: 42, alignItems: "center", justifyContent: "center" }}>
               <Pressable
@@ -89,6 +96,10 @@ export function MonthCalendar({
                 >
                   {cell.date}
                 </Text>
+                {/* booking dot (hidden when the day is selected — the fill covers it) */}
+                {marked && !on ? (
+                  <View style={{ position: "absolute", bottom: 3, width: 4, height: 4, borderRadius: 2, backgroundColor: colors.plumStrong }} />
+                ) : null}
               </Pressable>
             </View>
           );

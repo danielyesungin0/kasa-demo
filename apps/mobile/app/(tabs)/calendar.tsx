@@ -13,10 +13,11 @@ import { takePendingBooking } from "@/lib/bookingResult";
 import { DayGrid } from "@/components/calendar/DayGrid";
 import { WeekGrid } from "@/components/calendar/WeekGrid";
 import { MonthGrid } from "@/components/calendar/MonthGrid";
-import { useAppointments, type Appointment } from "@/lib/useAppointments";
+import { MonthCalendar } from "@/components/ui/MonthCalendar";
+import { useAppointments, dayKeyOf, type Appointment } from "@/lib/useAppointments";
 import { cancelBooking } from "@/lib/booking";
 import {
-  todayKey, dayStrip, weekStrip, monthStrip, weekStart, parseKey, addDaysKey,
+  todayKey, weekStrip, weekStart, parseKey, addDaysKey,
   dayHeaderLabel, monthLabel,
 } from "@/lib/calendar";
 import { colors } from "@/theme/colors";
@@ -51,7 +52,16 @@ export default function CalendarScreen() {
   const [dayKey, setDayKey] = useState(todayKey());
   const [weekKey, setWeekKey] = useState(weekStart(todayKey()));
   const [monthIdx, setMonthIdx] = useState(new Date().getMonth());
+  const [miniOpen, setMiniOpen] = useState(false);
   const year = new Date().getFullYear();
+
+  function goToToday() {
+    const tk = todayKey();
+    setDayKey(tk); setWeekKey(weekStart(tk)); setMonthIdx(parseKey(tk).mo - 1);
+    setMiniOpen(false);
+  }
+  // Days that have at least one appointment → booking dots in the mini month.
+  const bookedDays = useMemo(() => new Set(items.map((a) => dayKeyOf(a.starts_at))), [items]);
 
   // When navigated with ?day=YYYY-MM-DD (e.g. right after booking, or from a
   // client's upcoming card), jump to that day in Day view; ?highlight=<id>
@@ -69,9 +79,7 @@ export default function CalendarScreen() {
     }
   }, [params.day, params.highlight]);
 
-  const days = useMemo(() => dayStrip(weekStart(todayKey()), 14), []); // 2 weeks of day pills
-  const weeks = useMemo(() => weekStrip(todayKey()), []);
-  const months = useMemo(() => monthStrip(), []);
+  const weeks = useMemo(() => weekStrip(todayKey()), []); // used only for the week period label
 
   const periodLabel =
     view === "day" ? dayHeaderLabel(dayKey)
@@ -142,18 +150,27 @@ export default function CalendarScreen() {
 
   return (
     <View className="flex-1 bg-bg" style={{ paddingTop: insets.top }}>
-      {/* header */}
+      {/* header — Google Calendar pattern: a tappable period title that expands
+          a mini month-grid; the view switcher; a Today shortcut. */}
       <View className="border-b border-line px-gutter pb-2.5 pt-3">
         <View className="mb-3 flex-row items-center justify-between" style={{ minHeight: 40 }}>
-          <Text variant="title">{periodLabel}</Text>
-          <View className="flex-row items-center rounded-pill bg-ok-soft px-2.5 py-1.5" style={{ gap: 5 }}>
-            <Icon name="link" size={12} color={colors.okInk} />
-            <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.okInk }}>Square</Text>
+          <Pressable onPress={() => setMiniOpen((o) => !o)} accessibilityRole="button" accessibilityState={{ expanded: miniOpen }} className="flex-row items-center" style={{ gap: 6 }} hitSlop={6}>
+            <Text variant="title">{periodLabel}</Text>
+            <Icon name={miniOpen ? "chevD" : "chevR"} size={16} color={colors.ink3} />
+          </Pressable>
+          <View className="flex-row items-center" style={{ gap: 8 }}>
+            <Pressable onPress={goToToday} accessibilityRole="button" className="rounded-pill border border-line-2 bg-surface px-3 py-1.5">
+              <Text style={{ fontSize: 12.5, fontFamily: "Inter_600SemiBold", color: colors.ink2 }}>Today</Text>
+            </Pressable>
+            <View className="flex-row items-center rounded-pill bg-ok-soft px-2.5 py-1.5" style={{ gap: 5 }}>
+              <Icon name="link" size={12} color={colors.okInk} />
+              <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.okInk }}>Square</Text>
+            </View>
           </View>
         </View>
 
         {/* segmented control */}
-        <View className="mb-3 flex-row rounded-control bg-bg-warm p-[3px]" style={{ gap: 2 }}>
+        <View className="flex-row rounded-control bg-bg-warm p-[3px]" style={{ gap: 2 }}>
           {(["day", "week", "month"] as View3[]).map((v) => (
             <Pressable
               key={v}
@@ -170,41 +187,24 @@ export default function CalendarScreen() {
           ))}
         </View>
 
-        {/* unit-matched pill strip (fixed-height pills) */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7, paddingVertical: 2 }} style={{ marginHorizontal: -20, paddingHorizontal: 20 }}>
-          {view === "day" && days.map((d) => {
-            const on = d.key === dayKey;
-            return (
-              <Pressable key={d.key} onPress={() => setDayKey(d.key)} accessibilityRole="button"
-                className={`items-center justify-center rounded-[15px] border ${on ? "border-ink bg-ink" : "border-line-2 bg-surface"}`}
-                style={{ width: 50, height: 54, gap: 3 }}>
-                <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: on ? "#fff" : d.isToday ? colors.accent : colors.ink4 }}>{d.dow}</Text>
-                <Text tabular style={{ fontSize: 17, fontFamily: "Inter_600SemiBold", color: on ? "#fff" : colors.ink2 }}>{d.n}</Text>
-              </Pressable>
-            );
-          })}
-          {view === "week" && weeks.map((w) => {
-            const on = w.startKey === weekKey;
-            return (
-              <Pressable key={w.startKey} onPress={() => setWeekKey(w.startKey)} accessibilityRole="button"
-                className={`items-center justify-center rounded-[15px] border ${on ? "border-ink bg-ink" : "border-line-2 bg-surface"}`}
-                style={{ minWidth: 56, height: 54, paddingHorizontal: 12, gap: 3 }}>
-                <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: on ? "#fff" : w.isCurrent ? colors.accent : colors.ink4 }}>{w.top}</Text>
-                <Text tabular style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: on ? "#fff" : colors.ink2 }}>{w.range}</Text>
-              </Pressable>
-            );
-          })}
-          {view === "month" && months.map((m) => {
-            const on = m.idx === monthIdx;
-            return (
-              <Pressable key={m.idx} onPress={() => setMonthIdx(m.idx)} accessibilityRole="button"
-                className={`items-center justify-center rounded-[15px] border ${on ? "border-ink bg-ink" : "border-line-2 bg-surface"}`}
-                style={{ width: 54, height: 54 }}>
-                <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: on ? "#fff" : m.isCurrent ? colors.accentStrong : colors.ink2 }}>{m.label}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+        {/* mini month-grid dropdown — tap a date to jump there (sets the day in
+            Day view, the containing week in Week view, the month in Month view),
+            then collapses. Booking dots mark days with appointments. */}
+        {miniOpen ? (
+          <View className="mt-3">
+            <MonthCalendar
+              selectedKey={view === "day" ? dayKey : view === "week" ? weekKey : `${year}-${String(monthIdx + 1).padStart(2, "0")}-01`}
+              allowPast
+              markedDays={bookedDays}
+              onSelect={(k) => {
+                if (view === "day") setDayKey(k);
+                else if (view === "week") setWeekKey(weekStart(k));
+                else setMonthIdx(parseKey(k).mo - 1);
+                setMiniOpen(false);
+              }}
+            />
+          </View>
+        ) : null}
       </View>
 
       {/* active grid */}
