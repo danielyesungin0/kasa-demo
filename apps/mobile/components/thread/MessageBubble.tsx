@@ -9,6 +9,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
 import { colors } from "@/theme/colors";
 import { parseMedia } from "@/lib/media";
+import { TypingDots } from "@/components/ui/TypingDots";
 import type { ThreadMessage } from "@/lib/useThread";
 
 function timeLabel(iso: string): string {
@@ -110,9 +111,14 @@ export function MessageBubble({
               <Icon name="alert" size={11} color={colors.err} />
               <Text style={{ fontSize: 10.5, color: colors.err, fontFamily: "Inter_500Medium" }}>Failed — tap to retry</Text>
             </Pressable>
+          ) : sending ? (
+            <View className="flex-row items-center" style={{ gap: 5 }}>
+              <Text style={{ fontSize: 10.5, color: colors.ink4 }}>Sending</Text>
+              <TypingDots color={colors.ink4} size={4} />
+            </View>
           ) : (
             <Text tabular style={{ fontSize: 10.5, color: colors.ink4 }}>
-              {sending ? "Sending…" : timeLabel(msg.sent_at)}
+              {timeLabel(msg.sent_at)}
             </Text>
           )}
         </View>
