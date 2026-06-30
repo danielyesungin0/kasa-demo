@@ -4,17 +4,17 @@
 //   - channels→ rows in `channels` (type, connected, status)
 //
 // Square uses REAL OAuth (square-oauth-start → Square authorize → callback
-// stores encrypted tokens). Instagram/WeChat OAuth is still a TODO(oauth) seam
+// stores encrypted tokens). Instagram OAuth is still a TODO(oauth) seam
 // and seeds a row for now. All state reads the real tables, never local guesses.
 import { useCallback, useEffect, useState } from "react";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
 import { supabase, FUNCTIONS_URL } from "./supabase";
-import { WECHAT_LIVE, SMS_LIVE } from "./config";
+import { SMS_LIVE, WHATSAPP_LIVE, MESSENGER_LIVE } from "./config";
 
 export type ConnState = "idle" | "connecting" | "connected" | "action_needed" | "pending";
 
-export type ProviderId = "square" | "instagram" | "wechat" | "sms";
+export type ProviderId = "square" | "instagram" | "whatsapp" | "messenger" | "sms";
 
 export type ConnInfo = {
   state: ConnState;
@@ -26,7 +26,7 @@ export type ChannelsData = {
   conn: Record<ProviderId, ConnInfo>;
   refresh: () => Promise<void>;
   connectSquare: () => Promise<void>;
-  connectChannel: (id: "instagram" | "wechat" | "sms") => Promise<void>;
+  connectChannel: (id: "instagram" | "whatsapp" | "messenger" | "sms") => Promise<void>;
   disconnect: (id: ProviderId) => Promise<void>;
 };
 
@@ -40,7 +40,8 @@ export function useChannels(): ChannelsData {
   const [conn, setConn] = useState<Record<ProviderId, ConnInfo>>({
     square: { state: "idle" },
     instagram: { state: "idle" },
-    wechat: { state: "idle" },
+    whatsapp: { state: "idle" },
+    messenger: { state: "idle" },
     sms: { state: "idle" },
   });
 
@@ -55,10 +56,24 @@ export function useChannels(): ChannelsData {
       .select("type, connected, status, external_account_id, sms_number, sms_registration");
 
     const byType = new Map((chans ?? []).map((c: any) => [c.type, c]));
-    const channelInfo = (t: "instagram" | "wechat" | "sms"): ConnInfo => {
-      // WeChat is not live until OA verification is approved + credentials set.
-      if (t === "wechat" && !WECHAT_LIVE) {
-        return { state: "pending", label: "Verification in review" };
+    const channelInfo = (t: "instagram" | "whatsapp" | "messenger" | "sms"): ConnInfo => {
+      // WhatsApp is not live until the Meta WhatsApp Business account is set up.
+      if (t === "whatsapp") {
+        if (!WHATSAPP_LIVE) return { state: "idle", label: "Not set up yet" };
+        const row: any = byType.get("whatsapp");
+        if (!row) return { state: "idle" };
+        if (row.status === "action_needed") return { state: "action_needed", label: "Reconnect needed" };
+        if (row.connected) return { state: "connected", label: row.external_account_id ?? undefined };
+        return { state: "idle" };
+      }
+      // Messenger is not live until the Meta Page is connected for Messenger.
+      if (t === "messenger") {
+        if (!MESSENGER_LIVE) return { state: "idle", label: "Not set up yet" };
+        const row: any = byType.get("messenger");
+        if (!row) return { state: "idle" };
+        if (row.status === "action_needed") return { state: "action_needed", label: "Reconnect needed" };
+        if (row.connected) return { state: "connected", label: row.external_account_id ?? undefined };
+        return { state: "idle" };
       }
       // SMS is not live until a provider account + A2P registration + number
       // exist. Until then, reflect the registration lifecycle if a row exists,
@@ -91,7 +106,8 @@ export function useChannels(): ChannelsData {
           }
         : { state: "idle" },
       instagram: channelInfo("instagram"),
-      wechat: channelInfo("wechat"),
+      whatsapp: channelInfo("whatsapp"),
+      messenger: channelInfo("messenger"),
       sms: channelInfo("sms"),
     });
     setLoading(false);
@@ -161,7 +177,7 @@ export function useChannels(): ChannelsData {
     }
   }, [refresh]);
 
-  const connectChannel = useCallback(async (id: "instagram" | "wechat" | "sms") => {
+  const connectChannel = useCallback(async (id: "instagram" | "whatsapp" | "messenger" | "sms") => {
     setState(id, { state: "connecting" });
 
     // Instagram: REAL Meta OAuth (instagram-oauth-start → Meta dialog → callback
@@ -203,13 +219,18 @@ export function useChannels(): ChannelsData {
       return;
     }
 
-    // WeChat: not connectable until OA verification is approved + credentials
-    // configured (WECHAT_LIVE). Until then it's a no-op — the UI shows the
-    // "Pending verification" state, never a fake connect.
-    if (id === "wechat") {
-      if (!WECHAT_LIVE) { await refresh(); return; }
-      // (When live, the real WeChat connect flow — store AppID/secret + token —
-      // slots in here.)
+    // WhatsApp: not connectable until the Meta WhatsApp Business account is set
+    // up (WHATSAPP_LIVE). No-op for now — the UI shows "Coming soon". When live,
+    // the real Meta connect flow slots in here.
+    if (id === "whatsapp") {
+      await refresh();
+      return;
+    }
+
+    // Messenger: not connectable until the Meta Page is connected for Messenger
+    // (MESSENGER_LIVE). No-op for now — the UI shows "Coming soon". When live,
+    // the real Meta connect flow slots in here.
+    if (id === "messenger") {
       await refresh();
       return;
     }

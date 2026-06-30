@@ -1,18 +1,18 @@
-// Per-platform connect sheets (Square / Instagram / WeChat) — the realistic
-// flows from design/onboarding-reference.html, incl. the help branches:
-// "I don't have a Professional account" (IG) and "I don't have a Service
-// Account" (WeChat). The actual external OAuth/QR is a TODO(oauth) seam; the
-// final "Allow / I've authorized" button calls the seed-connect action.
+// Per-platform connect sheets (Square / Instagram) — the realistic flows from
+// design/onboarding-reference.html, incl. the help branch "I don't have a
+// Professional account" (IG). The actual external OAuth is a TODO(oauth) seam;
+// the final "Allow / Continue" button calls the connect action.
 import { useEffect, useRef, useState } from "react";
 import { View, Pressable, Modal, ScrollView, Animated, Easing, Dimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
-import { colors, channels } from "@/theme/colors";
+import { colors } from "@/theme/colors";
 
-// SMS is included for type-consistency with ProviderId; it never opens this
-// sheet today (gated to "Coming soon" until a provider is set up).
-type Provider = "square" | "instagram" | "wechat" | "sms";
+// SMS / WhatsApp / Messenger are included for type-consistency with ProviderId;
+// they never open this sheet today (gated to "Coming soon" until a provider is
+// set up).
+type Provider = "square" | "instagram" | "whatsapp" | "messenger" | "sms";
 
 function Requirement({ text }: { text: React.ReactNode }) {
   return (
@@ -75,7 +75,6 @@ export function ConnectSheet({
     <SheetShell onClose={close} insets={insets}>
       {provider === "square" && <SquareBody step={step} setStep={setStep} finish={finish} close={close} />}
       {provider === "instagram" && <IGBody step={step} setStep={setStep} finish={finish} close={close} />}
-      {provider === "wechat" && <WeChatBody step={step} setStep={setStep} finish={finish} close={close} />}
     </SheetShell>
   );
 }
@@ -219,55 +218,6 @@ function IGBody({ step, setStep, finish, close }: any) {
     <View>
       <Text variant="title">Connecting…</Text>
       <Text variant="body" className="mt-2 text-ink-3">Finish signing in with Meta in the browser. You'll come right back.</Text>
-    </View>
-  );
-}
-
-function WeChatBody({ step, setStep, finish, close }: any) {
-  if (step === 99) {
-    return (
-      <View>
-        <Text variant="title">Getting a Service Account</Text>
-        <Text variant="body" className="mt-2 text-ink-3">This one's heavier — especially outside mainland China:</Text>
-        <View className="mt-3">
-          <Step n={1} text={<>Register an <Text style={{ fontFamily: "Inter_600SemiBold", color: colors.ink }}>Official Account</Text> (Service Account)</>} />
-          <Step n={2} text={<>Complete <Text style={{ fontFamily: "Inter_600SemiBold", color: colors.ink }}>business verification</Text> (documents + annual fee)</>} />
-          <Step n={3} text="Come back and authorize Kasa" />
-        </View>
-        <PrimaryBtn label="← Back" onPress={() => setStep(0)} bg={colors.bgWarm} />
-      </View>
-    );
-  }
-  if (step === 0) {
-    return (
-      <View>
-        <Text variant="title">Connect WeChat</Text>
-        <Text variant="body" className="mt-2 text-ink-3">Kasa connects to your WeChat Official Account to read and reply to client messages.</Text>
-        <View className="mt-3">
-          <Requirement text={<><Text style={{ fontFamily: "Inter_600SemiBold", color: colors.ink }}>Service Account</Text> type (not Subscription)</>} />
-          <Requirement text={<><Text style={{ fontFamily: "Inter_600SemiBold", color: colors.ink }}>Verified</Text> — clients must message you first</>} />
-        </View>
-        <View className="mt-3.5 flex-row rounded-control bg-warn-soft p-3" style={{ gap: 9 }}>
-          <Icon name="clock" size={15} color={colors.warnInk} />
-          <Text className="flex-1 text-warn-ink" style={{ fontSize: 12.5, lineHeight: 18 }}>
-            Reply window is 48 hours from the client's last message.
-          </Text>
-        </View>
-        <PrimaryBtn label="Authorize with WeChat" onPress={() => setStep(1)} bg={channels.wechat.dot} />
-        <Pressable onPress={() => setStep(99)} className="mt-3 items-center"><Text className="text-accent-ink" style={{ fontSize: 13.5, fontFamily: "Inter_600SemiBold" }}>I don't have a Service Account</Text></Pressable>
-      </View>
-    );
-  }
-  return (
-    <View>
-      <Text variant="title">Scan to authorize</Text>
-      <Text variant="body" className="mt-2 text-ink-3">Open WeChat on the phone with your Official Account and scan:</Text>
-      {/* QR placeholder (TODO(oauth): real WeChat authorization QR in Phase 4) */}
-      <View className="my-4 self-center items-center justify-center rounded-card border border-line-2 bg-surface-2" style={{ width: 158, height: 158 }}>
-        <Icon name="image" size={40} color={colors.ink4} />
-      </View>
-      <PrimaryBtn label="I've scanned & authorized" onPress={finish} bg={channels.wechat.dot} />
-      <Pressable onPress={close} className="mt-2.5 items-center"><Text className="text-accent-ink" style={{ fontSize: 13.5, fontFamily: "Inter_600SemiBold" }}>Cancel</Text></Pressable>
     </View>
   );
 }

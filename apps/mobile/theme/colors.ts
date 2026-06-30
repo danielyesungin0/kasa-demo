@@ -34,11 +34,14 @@ export const colors = {
   blueSoft: "#E3EAF2",
 } as const;
 
-// Channel meta — fill/glyph/tint per DESIGN.md §2. The four channels only.
+// Channel meta — fill/glyph/tint per channel. (WeChat removed.) Brand-ish hues:
+// IG plum-pink, WhatsApp green, Messenger blue, SMS slate, LINE green, Kakao yellow.
 export const channels = {
   instagram: { label: "Instagram", text: "#B5547F", soft: "#F6E5EE", dot: "#C2548A", glyph: "#FFFFFF" },
+  whatsapp: { label: "WhatsApp", text: "#2E7D46", soft: "#E2F2E8", dot: "#25D366", glyph: "#FFFFFF" },
+  messenger: { label: "Messenger", text: "#3A6FD8", soft: "#E4ECFB", dot: "#0A7CFF", glyph: "#FFFFFF" },
   sms: { label: "SMS", text: "#5B7FA6", soft: "#E3EAF2", dot: "#4F86C6", glyph: "#FFFFFF" },
-  wechat: { label: "WeChat", text: "#3FA56E", soft: "#E1F0E7", dot: "#1FA855", glyph: "#FFFFFF" },
+  line: { label: "LINE", text: "#2E8B45", soft: "#E3F3E6", dot: "#06C755", glyph: "#FFFFFF" },
   kakao: { label: "KakaoTalk", text: "#A98A00", soft: "#FBF2C9", dot: "#F4C300", glyph: "#3A2E00" },
 } as const;
 

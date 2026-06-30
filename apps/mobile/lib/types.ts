@@ -1,7 +1,16 @@
 // Shared DB row types for the app. Mirror the Supabase schema (DATA_MODEL.md).
 // (Will move to packages/shared when that workspace is created.)
 
-export type ChannelType = "instagram" | "sms" | "wechat" | "kakao";
+// Channels Kasa supports / is building toward. WeChat was removed (Tencent walls
+// off personal accounts + blocks SaaS automation — see research). whatsapp +
+// messenger reuse the Meta stack; line + kakao are Asia channels.
+export type ChannelType =
+  | "instagram"
+  | "whatsapp"
+  | "messenger"
+  | "sms"
+  | "line"
+  | "kakao";
 export type MessageDirection = "in" | "out" | "note";
 export type MessageStatus = "sent" | "delivered" | "failed";
 export type ConversationIntent = "none" | "booking";

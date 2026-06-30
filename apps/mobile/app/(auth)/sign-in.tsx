@@ -182,7 +182,7 @@ export default function SignInScreen() {
           {/* the two-logins helper (from the prototype) */}
           <Text className="mt-5 text-center text-ink-4" style={{ fontSize: 12.5, lineHeight: 18 }}>
             Sign-in is handled by Supabase Auth.{"\n"}
-            Connecting Instagram / WeChat / Square comes next — that's separate from logging in.
+            Connecting Instagram / WhatsApp / Square comes next — that's separate from logging in.
           </Text>
         </View>
       </ScrollView>

@@ -51,7 +51,7 @@ export default function MoreScreen() {
       {/* settings */}
       <Text className="mx-gutter mb-2 text-ink-4" style={{ fontSize: 12, fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>SETTINGS</Text>
       <View className="mx-gutter overflow-hidden rounded-card border border-line bg-surface">
-        <Row icon="link" label="Channels" sub="Instagram, WeChat, Square" onPress={() => router.push("/settings/channels")} last />
+        <Row icon="link" label="Channels" sub="Instagram, WhatsApp, Square" onPress={() => router.push("/settings/channels")} last />
       </View>
 
       {/* legal */}

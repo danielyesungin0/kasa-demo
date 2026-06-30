@@ -76,7 +76,7 @@ export default function InboxScreen() {
         <View className="mb-3 flex-row items-center justify-between" style={{ minHeight: 40 }}>
           <Text variant="title">Inbox</Text>
           {/* channel filter → bottom sheet, in the header. Only shown with >1
-              channel (ready for WeChat); highlights when a channel is active. */}
+              channel (ready for more channels); highlights when a channel is active. */}
           {presentChannels.length > 1 ? (
             <Pressable
               onPress={() => setFilterOpen(true)}

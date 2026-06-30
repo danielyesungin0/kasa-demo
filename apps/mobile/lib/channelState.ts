@@ -32,14 +32,14 @@ export function channelState(
       },
     };
   }
-  if (channel === "wechat") {
+  if (channel === "whatsapp" || channel === "messenger") {
     return {
       canSend: false,
       openLabel: `Reply on ${label}`,
       banner: {
         kind: "warn",
-        title: "WeChat service window closed",
-        body: `It's been over 48 hours since her last message, so WeChat only allows a notification now. Open ${label} to reply.`,
+        title: `${label} reply window closed`,
+        body: `${label} only allows free replies within 24 hours of the last message. Open ${label} to continue.`,
       },
     };
   }

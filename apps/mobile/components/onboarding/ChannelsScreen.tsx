@@ -12,16 +12,17 @@ import { ChannelDot } from "@/components/ui/ChannelDot";
 import { ConnectSheet } from "./ConnectSheet";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useChannels, type ConnState, type ProviderId } from "@/lib/useChannels";
-import { SMS_LIVE } from "@/lib/config";
+import { SMS_LIVE, WHATSAPP_LIVE, MESSENGER_LIVE } from "@/lib/config";
 import { colors } from "@/theme/colors";
 
-// Square + Instagram connect now. WeChat is pending OA verification. SMS is a
-// real channel being set up (provider + A2P registration) — shows its own
-// lifecycle states, gated by SMS_LIVE. Kakao remains post-launch.
+// Square + Instagram connect now. WhatsApp, Messenger, and SMS are real channels
+// being set up — they show "Coming soon" until their *_LIVE flag is on. Kakao
+// remains post-launch.
 const PROVIDERS: { id: ProviderId; name: string; sub: string; required?: boolean; channel?: boolean }[] = [
   { id: "square", name: "Square", sub: "Your calendar & bookings", required: true },
   { id: "instagram", name: "Instagram", sub: "Client DMs", channel: true },
-  { id: "wechat", name: "WeChat", sub: "Client messages", channel: true },
+  { id: "whatsapp", name: "WhatsApp", sub: "Client chats", channel: true },
+  { id: "messenger", name: "Messenger", sub: "Client DMs", channel: true },
   { id: "sms", name: "SMS", sub: "Text messages", channel: true },
 ];
 const LATER = [
@@ -78,7 +79,7 @@ export function ChannelsScreen({
     return (
       <View className="flex-row items-center border-b border-line px-4 py-4" style={{ gap: 13 }}>
         {isChannel ? (
-          <ChannelDot ch={id as "instagram" | "wechat" | "sms"} size={42} />
+          <ChannelDot ch={id as "instagram" | "whatsapp" | "messenger" | "sms"} size={42} />
         ) : (
           <View className="items-center justify-center rounded-control" style={{ width: 42, height: 42, backgroundColor: colors.plumSoft }}>
             <Icon name="calendar" size={20} color={colors.plum} />
@@ -117,8 +118,8 @@ export function ChannelsScreen({
           <View className="flex-row items-center rounded-control bg-bg-warm px-3.5" style={{ height: 36 }}>
             <ActivityIndicator size="small" color={colors.ink3} />
           </View>
-        ) : id === "sms" && !SMS_LIVE ? (
-          // SMS provider not set up yet — honest "Coming soon", no connect action.
+        ) : (id === "sms" && !SMS_LIVE) || (id === "whatsapp" && !WHATSAPP_LIVE) || (id === "messenger" && !MESSENGER_LIVE) ? (
+          // Channel provider not set up yet — honest "Coming soon", no connect action.
           <View className="rounded-pill bg-bg-warm px-2.5 py-1.5"><Text style={{ fontSize: 11, fontFamily: "Inter_700Bold", color: colors.ink4 }}>Coming soon</Text></View>
         ) : (
           <Pressable
@@ -179,7 +180,8 @@ export function ChannelsScreen({
         <Text className="mt-5 mb-2.5 px-1 text-ink-4" style={{ fontSize: 12, fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>MESSAGE CHANNELS</Text>
         <View className="overflow-hidden rounded-card border border-line bg-surface">
           <ConnRow id="instagram" />
-          <ConnRow id="wechat" />
+          <ConnRow id="whatsapp" />
+          <ConnRow id="messenger" />
           <ConnRow id="sms" />
         </View>
 

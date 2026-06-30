@@ -20,14 +20,17 @@
 //      slow/failed AI call must NEVER drop the message (DECISIONS.md #12).
 // ============================================================
 
-type ChannelType = "instagram" | "sms" | "wechat" | "kakao";
+type ChannelType = "instagram" | "whatsapp" | "messenger" | "sms" | "line" | "kakao";
 
-// Reply-window rules per channel (hours). 0 = no window limit (SMS).
+// Reply-window rules per channel (hours). 0 = no window limit.
+// (WeChat removed.) WhatsApp + Messenger share Meta's 24h customer-service window.
 const WINDOW_HOURS: Record<ChannelType, number> = {
   instagram: 24,
-  wechat: 48,
+  whatsapp: 24, // Meta 24h customer-service window (template msgs needed after)
+  messenger: 24, // Meta 24h standard messaging window
   sms: 0,
-  kakao: 0, // consultation session; modeled when Kakao is built (post-MVP)
+  line: 0, // LINE has no reply window for 1:1 push within plan limits
+  kakao: 0, // consultation session; modeled when Kakao is built
 };
 
 /** Common shape every per-channel handler produces from its raw payload. */
