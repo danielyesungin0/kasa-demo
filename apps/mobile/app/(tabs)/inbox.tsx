@@ -92,7 +92,7 @@ export default function InboxScreen() {
             >
               <Icon name="merge" size={14} color={channel !== "all" ? "#fff" : colors.ink3} />
               <Text style={{ fontSize: 13, fontFamily: "Inter_600SemiBold", color: channel !== "all" ? "#fff" : colors.ink2 }}>
-                {channel === "all" ? "Channel" : channelLabel(channel)}
+                {channel === "all" ? "Filter" : channelLabel(channel)}
               </Text>
             </Pressable>
           ) : null}

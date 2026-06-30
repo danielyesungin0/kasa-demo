@@ -52,6 +52,12 @@ export type InboundMessage = {
    * externalUserId is the RECIPIENT (the client), not the sender.
    */
   direction?: "in" | "out";
+  /**
+   * The business's own account id for this event (the non-client party): the
+   * recipient on an inbound, the sender on an echo. Used to guard against ever
+   * creating the business itself as a client.
+   */
+  businessAccountId?: string | null;
 };
 
 export type NormalizeResult = {
@@ -94,6 +100,17 @@ export async function normalizeInbound(
   // or spoofed) timestamp. The reply-window gate is security-relevant.
   const receivedAt = new Date().toISOString();
   const sentAt = msg.sentAt ?? receivedAt;
+
+  // SELF-GUARD: never create the business's own account as a client. The
+  // "client" of an event must not equal the business id (the non-client party).
+  // Protects against malformed events / self-DMs that would otherwise spawn a
+  // bogus self-client whose thread vacuums up messages from every real chat.
+  if (
+    msg.businessAccountId &&
+    msg.externalUserId === msg.businessAccountId
+  ) {
+    return { ok: true, deduped: true, reason: "self_message_ignored" };
+  }
 
   // 0) Persist raw payload for debugging (never trust it beyond this record).
   try {

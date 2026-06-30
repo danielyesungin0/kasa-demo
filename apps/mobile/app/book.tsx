@@ -244,9 +244,12 @@ export default function BookScreen() {
                   value={clientQuery}
                   onChangeText={setClientQuery}
                   onFocus={() => setClientFocused(true)}
+                  // Close the dropdown when the field loses focus and nothing was
+                  // typed/selected. Delay so a tap ON a result registers first.
+                  onBlur={() => setTimeout(() => setClientFocused(false), 150)}
                   placeholder="Search clients"
                 />
-                {(clientFocused || clientQuery) ? (
+                {(clientFocused && (clientQuery.length > 0 || clientMatches.length > 0)) ? (
                   <View className="mt-2 overflow-hidden rounded-control-lg border border-line-2 bg-surface">
                     {clientMatches.length === 0 ? (
                       <View className="px-4 py-3"><Text className="text-ink-4" style={{ fontSize: 13.5 }}>No matches.</Text></View>

@@ -76,9 +76,14 @@ function parseMeta(payload: unknown): InboundMessage[] {
       const isEcho = message.is_echo === true;
       // ECHO = the stylist's OWN message, sent from the Instagram app (not Kasa).
       // Record it so the chat stays in sync. For an echo the CLIENT is the
-      // recipient; for a normal inbound the client is the sender.
+      // recipient (and the business is the sender); for inbound it's the reverse.
       const clientExternalId = isEcho ? recipient : sender;
+      const businessId = isEcho ? sender : recipient;
       if (!clientExternalId) continue;
+      // SELF-GUARD: never treat the business's own account as a client. (Without
+      // this, a malformed echo where recipient==business would create a bogus
+      // self-client whose thread collects messages from every real chat.)
+      if (clientExternalId === businessId) continue;
 
       out.push({
         channel: "instagram",
@@ -89,6 +94,7 @@ function parseMeta(payload: unknown): InboundMessage[] {
         text: message.text ?? null,
         media: message.attachments ?? null,
         direction: isEcho ? "out" : "in",
+        businessAccountId: businessId ?? null,
         sentAt: typeof m.timestamp === "number"
           ? new Date(m.timestamp).toISOString()
           : null,

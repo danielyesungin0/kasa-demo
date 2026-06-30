@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, useCallback } from "react";
+import { useMemo, useRef, useState, useCallback, useEffect } from "react";
 import {
   View,
   Pressable,
@@ -64,9 +64,22 @@ export default function ThreadScreen() {
     [convo],
   );
 
-  const scrollToEnd = useCallback(() => {
-    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+  const scrollToEnd = useCallback((animated = true) => {
+    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated }));
   }, []);
+
+  // On first content render for a thread, jump to the bottom INSTANTLY (no
+  // visible top→bottom scroll). After that, new messages animate into view.
+  const didInitialScroll = useRef(false);
+  useEffect(() => { didInitialScroll.current = false; }, [id]);
+  const onContentSize = useCallback(() => {
+    if (!didInitialScroll.current) {
+      didInitialScroll.current = true;
+      scrollToEnd(false); // instant on open
+    } else {
+      scrollToEnd(true); // animated for subsequent messages
+    }
+  }, [scrollToEnd]);
 
   async function doSend(text: string) {
     const tempId = appendOptimistic(text);
@@ -212,7 +225,7 @@ export default function ThreadScreen() {
           className="flex-1"
           contentContainerStyle={{ padding: 16, paddingBottom: 14 }}
           renderItem={({ item }) => <MessageBubble msg={item} onRetry={retry} onOpenImage={setViewerUrl} />}
-          onContentSizeChange={scrollToEnd}
+          onContentSizeChange={onContentSize}
           showsVerticalScrollIndicator={false}
         />
 
