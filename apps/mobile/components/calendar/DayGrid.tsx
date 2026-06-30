@@ -14,10 +14,12 @@ export function DayGrid({
   dayKey,
   appts,
   onOpen,
+  highlightId,
 }: {
   dayKey: string;
   appts: Appointment[];
   onOpen: (a: Appointment) => void;
+  highlightId?: string | null;
 }) {
   const dayAppts = appts.filter((a) => dayKeyOf(a.starts_at) === dayKey);
   const isToday = dayKey === todayKey();
@@ -52,13 +54,14 @@ export function DayGrid({
           const top = (start - OPEN_HOUR) * HOUR_H + 2;
           const height = Math.max((end - start) * HOUR_H - 4, 30);
           const isNew = a.isNew;
+          const highlighted = highlightId === a.id;
           return (
             <Pressable
               key={a.id}
               onPress={() => onOpen(a)}
               accessibilityRole="button"
               accessibilityLabel={`${a.clientName}, ${a.serviceName ?? "appointment"}`}
-              style={{ position: "absolute", left: 0, right: 0, top, height, flexDirection: "row", borderRadius: 11, overflow: "hidden", backgroundColor: colors.plumSoft }}
+              style={{ position: "absolute", left: 0, right: 0, top, height, flexDirection: "row", borderRadius: 11, overflow: "hidden", backgroundColor: colors.plumSoft, borderWidth: highlighted ? 2 : 0, borderColor: colors.plumStrong }}
             >
               <View style={{ width: 4, backgroundColor: colors.plumStrong }} />
               <View style={{ flex: 1, minWidth: 0, paddingVertical: 7, paddingLeft: 9, paddingRight: 10 }}>

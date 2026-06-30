@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
   Linking,
 } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon } from "@/components/ui/Icon";
 import { Avatar } from "@/components/ui/Avatar";
@@ -20,26 +20,42 @@ import { MessageBubble } from "@/components/thread/MessageBubble";
 import { ImageViewer } from "@/components/ui/ImageViewer";
 import { BookingNudge, shouldShowNudge } from "@/components/thread/BookingNudge";
 import { useThread, type ThreadMessage } from "@/lib/useThread";
+import { takePendingBooking } from "@/lib/bookingResult";
+import { useToast } from "@/components/ui/Toast";
 import { channelState } from "@/lib/channelState";
 import { sendMessage } from "@/lib/sendMessage";
 import { channels } from "@/theme/colors";
 import { colors } from "@/theme/colors";
 
 export default function ThreadScreen() {
-  const { id, draft, booked } = useLocalSearchParams<{ id: string; draft?: string; booked?: string }>();
+  const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const toast = useToast();
   const listRef = useRef<FlatList>(null);
   const [viewerUrl, setViewerUrl] = useState<string | null>(null);
+  const [seededDraft, setSeededDraft] = useState<string | null>(null);
   // Measure the real header height so KeyboardAvoidingView's offset is exact
   // (a hardcoded guess left a gap between the keyboard and the input).
 
   const { convo, messages, loading, appendOptimistic, reconcile, dropOptimistic } =
     useThread(id);
-  // After booking, we arrive with booked=1 → dismiss the nudge (it's done its job)
-  // and the draft confirmation is seeded into the composer for review.
-  const [dismissedNudge, setDismissedNudge] = useState(booked === "1");
+  // After booking we return here (the modal dismisses back to THIS thread — no
+  // duplicate). On focus, consume the pending result: show the toast, seed the
+  // confirmation draft for review, and dismiss the nudge (its job is done).
+  const [dismissedNudge, setDismissedNudge] = useState(false);
   const [windowBanner, setWindowBanner] = useState<string | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      const pending = takePendingBooking();
+      if (pending && pending.conversationId === id) {
+        toast.show(pending.toast);
+        if (pending.draft) setSeededDraft(pending.draft);
+        setDismissedNudge(true);
+      }
+    }, [id]),
+  );
 
   const chState = useMemo(
     () => (convo ? channelState(convo.channel_type, convo.window_expires_at) : null),
@@ -196,7 +212,7 @@ export default function ThreadScreen() {
           onSend={doSend}
           onBook={() => router.push(`/book?conversation=${id}`)} // → Book sheet
           onOpenExternal={openExternal}
-          initialDraft={draft ?? null}
+          initialDraft={seededDraft}
         />
       </View>
       <ImageViewer url={viewerUrl} onClose={() => setViewerUrl(null)} />

@@ -7,6 +7,7 @@ import { Text } from "@/components/ui/Text";
 import { Avatar } from "@/components/ui/Avatar";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { SearchBar } from "@/components/ui/SearchBar";
+import { setPendingBooking } from "@/lib/bookingResult";
 import { useAppointments } from "@/lib/useAppointments";
 import { listServices, fetchAllSlots, availableSlots, createBooking, cancelBooking, type Service, type Slot } from "@/lib/booking";
 import { dayStrip, weekStart, todayKey } from "@/lib/calendar";
@@ -143,48 +144,48 @@ export default function BookScreen() {
       await cancelBooking(params.reschedule); // best-effort; new one is confirmed
     }
     setSubmitting(false);
-    setResult(res.ok ? { ok: true } : { ok: false, error: res.error });
-  }
+    if (!res.ok) { setResult({ ok: false, error: res.error }); return; }
 
-  function done() {
-    if (originConvo && client && svc && slot) {
-      const d = days.find((x) => x.key === dayKey);
-      const when = d ? `${d.dow} the ${d.n}` : "your appointment";
-      const draft = `Hi ${client.name.split(" ")[0].replace(/^@/, "")}! You're booked for a ${svc.name} on ${when} at ${slot.label}. See you then! 🤍`;
-      router.replace(`/thread/${originConvo}?draft=${encodeURIComponent(draft)}&booked=1`);
+    // SUCCESS: no full success screen. Hand off a pending result (toast + draft)
+    // and dismiss the modal back to whatever's underneath — the original chat
+    // (no duplicate thread) or the calendar. The draft is review-only.
+    const d = days.find((x) => x.key === dayKey);
+    const when = d ? `${d.dow} the ${d.n}` : "your appointment";
+    const draft = client
+      ? `Hi ${client.name.split(" ")[0].replace(/^@/, "")}! You're booked for a ${svc.name} on ${when} at ${slot.label}. See you then! 🤍`
+      : null;
+    setPendingBooking({
+      conversationId: originConvo,
+      draft: originConvo ? draft : null,
+      dayKey,
+      appointmentId: res.appointmentId,
+      toast: params.reschedule ? "Appointment rescheduled" : "Appointment confirmed",
+    });
+    if (originConvo) {
+      router.back(); // dismiss modal → lands on the existing thread
     } else {
-      router.replace(`/(tabs)/calendar?day=${dayKey}`);
+      router.replace(`/(tabs)/calendar?day=${dayKey}&highlight=${res.appointmentId ?? ""}`);
     }
   }
 
-  // ── Result screen ──
-  if (result) {
+  // ── Failure screen (success no longer shows a screen — it dismisses) ──
+  if (result && !result.ok) {
     return (
       <View className="flex-1 bg-bg" style={{ paddingTop: 8 }}>
         <View className="flex-1 items-center justify-center px-gutter">
-          <View className="items-center justify-center rounded-full" style={{ width: 72, height: 72, backgroundColor: result.ok ? colors.okSoft : colors.errSoft }}>
-            <Icon name={result.ok ? "checkCircle" : "alert"} size={36} color={result.ok ? colors.okInk : colors.errInk} />
+          <View className="items-center justify-center rounded-full" style={{ width: 72, height: 72, backgroundColor: colors.errSoft }}>
+            <Icon name="alert" size={36} color={colors.errInk} />
           </View>
-          <Text variant="display" className="mt-5 text-center">
-            {result.ok ? "Booked in Square" : "Couldn't reach Square"}
+          <Text variant="display" className="mt-5 text-center">Couldn't reach Square</Text>
+          <Text variant="body" className="mt-2 text-center text-ink-3">
+            {result.error ?? "Nothing was booked."} Nothing was created — you can retry.
           </Text>
-          {result.ok && client && svc && slot ? (
-            <Text variant="body" className="mt-2 text-center text-ink-3">
-              {client.name} · {svc.name} · {slot.label}. It's on your calendar.
-            </Text>
-          ) : (
-            <Text variant="body" className="mt-2 text-center text-ink-3">
-              {result.error ?? "Nothing was booked."} Nothing was created — you can retry.
-            </Text>
-          )}
           <View className="mt-7 w-full" style={{ gap: 10 }}>
-            {!result.ok ? (
-              <Pressable onPress={() => setResult(null)} accessibilityRole="button" className="items-center justify-center rounded-control-lg bg-plum-strong" style={{ height: 52 }}>
-                <Text className="text-white" style={{ fontSize: 15.5, fontFamily: "Inter_600SemiBold" }}>Try again</Text>
-              </Pressable>
-            ) : null}
-            <Pressable onPress={result.ok ? done : () => router.back()} accessibilityRole="button" className="items-center justify-center rounded-control-lg border border-line-2 bg-surface" style={{ height: 52 }}>
-              <Text style={{ fontSize: 15.5, fontFamily: "Inter_600SemiBold", color: colors.ink }}>{result.ok ? "Done" : "Close"}</Text>
+            <Pressable onPress={() => setResult(null)} accessibilityRole="button" className="items-center justify-center rounded-control-lg bg-plum-strong" style={{ height: 52 }}>
+              <Text className="text-white" style={{ fontSize: 15.5, fontFamily: "Inter_600SemiBold" }}>Try again</Text>
+            </Pressable>
+            <Pressable onPress={() => router.back()} accessibilityRole="button" className="items-center justify-center rounded-control-lg border border-line-2 bg-surface" style={{ height: 52 }}>
+              <Text style={{ fontSize: 15.5, fontFamily: "Inter_600SemiBold", color: colors.ink }}>Close</Text>
             </Pressable>
           </View>
         </View>

@@ -18,6 +18,7 @@ import {
 import * as SplashScreen from "expo-splash-screen";
 import { colors } from "@/theme/colors";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { ToastProvider } from "@/components/ui/Toast";
 import { useOnboardingGate } from "@/lib/useOnboardingGate";
 
 SplashScreen.preventAutoHideAsync();
@@ -81,6 +82,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <StatusBar style="dark" />
+        <ToastProvider>
         <AuthProvider>
           <Guard>
             <Stack
@@ -102,6 +104,7 @@ export default function RootLayout() {
             </Stack>
           </Guard>
         </AuthProvider>
+        </ToastProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

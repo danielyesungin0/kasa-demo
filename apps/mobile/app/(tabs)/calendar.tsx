@@ -6,8 +6,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { Icon } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
-import { ActionSheet } from "@/components/ui/ActionSheet";
+import { AppointmentSheet } from "@/components/calendar/AppointmentSheet";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { useToast } from "@/components/ui/Toast";
+import { takePendingBooking } from "@/lib/bookingResult";
 import { DayGrid } from "@/components/calendar/DayGrid";
 import { WeekGrid } from "@/components/calendar/WeekGrid";
 import { MonthGrid } from "@/components/calendar/MonthGrid";
@@ -26,9 +28,24 @@ export default function CalendarScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { items, loading, reload } = useAppointments();
+  const toast = useToast();
+  const [highlightId, setHighlightId] = useState<string | null>(null);
   // Refresh whenever the Calendar gains focus (e.g. right after booking) so a
-  // just-created appointment shows without waiting on the Realtime event.
-  useFocusEffect(useCallback(() => { reload(); }, [reload]));
+  // just-created appointment shows without waiting on the Realtime event. Also
+  // consume a pending booking made from the calendar (toast + highlight).
+  useFocusEffect(useCallback(() => {
+    reload();
+    const pending = takePendingBooking();
+    if (pending && !pending.conversationId) {
+      toast.show(pending.toast);
+      setDayKey(pending.dayKey);
+      setView("day");
+      if (pending.appointmentId) {
+        setHighlightId(pending.appointmentId);
+        setTimeout(() => setHighlightId(null), 2600); // brief highlight, then fade
+      }
+    }
+  }, [reload]));
 
   const [view, setView] = useState<View3>("day");
   const [dayKey, setDayKey] = useState(todayKey());
@@ -55,7 +72,7 @@ export default function CalendarScreen() {
     : view === "week" ? (weeks.find((w) => w.startKey === weekKey)?.label ?? "")
     : monthLabel(monthIdx, year);
 
-  // Tap an appointment → our own ActionSheet (View / Reschedule / Cancel).
+  // Tap an appointment → the event-detail sheet (Google Calendar pattern).
   const [sheetAppt, setSheetAppt] = useState<Appointment | null>(null);
   function openAppt(a: Appointment) { setSheetAppt(a); }
 
@@ -69,7 +86,7 @@ export default function CalendarScreen() {
           text: "Cancel appointment", style: "destructive",
           onPress: async () => {
             const res = await cancelBooking(a.id);
-            if (res.ok) reload();
+            if (res.ok) { reload(); toast.show("Appointment canceled", { icon: "trash", tone: "info" }); }
             else Alert.alert("Couldn't cancel", res.error ?? "Try again.");
           },
         },
@@ -198,7 +215,7 @@ export default function CalendarScreen() {
         <GestureDetector gesture={swipe}>
           <ScrollView className="flex-1 bg-surface" contentContainerStyle={{ paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 16 }} showsVerticalScrollIndicator={false}>
             <Animated.View style={{ transform: [{ translateX: slideX }] }}>
-              {view === "day" && <DayGrid dayKey={dayKey} appts={items} onOpen={openAppt} />}
+              {view === "day" && <DayGrid dayKey={dayKey} appts={items} onOpen={openAppt} highlightId={highlightId} />}
               {view === "week" && <WeekGrid weekStartKey={weekKey} appts={items} onPickDay={(k) => { setDayKey(k); setView("day"); }} onOpen={openAppt} />}
               {view === "month" && <MonthGrid year={year} monthIdx={monthIdx} appts={items} onPickDay={(k) => { setDayKey(k); setView("day"); }} />}
             </Animated.View>
@@ -217,20 +234,12 @@ export default function CalendarScreen() {
         <Icon name="plus" size={26} color="#fff" />
       </Pressable>
 
-      <ActionSheet
-        visible={!!sheetAppt}
-        title={sheetAppt ? sheetAppt.clientName : undefined}
-        subtitle={sheetAppt ? sheetAppt.serviceName ?? "Appointment" : undefined}
+      <AppointmentSheet
+        appt={sheetAppt}
         onClose={() => setSheetAppt(null)}
-        actions={
-          sheetAppt
-            ? [
-                { label: "View client", icon: "user", onPress: () => sheetAppt.client_id && router.push(`/client/${sheetAppt.client_id}`) },
-                { label: "Reschedule", icon: "clock", onPress: () => rescheduleAppt(sheetAppt) },
-                { label: "Cancel appointment", icon: "x", destructive: true, onPress: () => confirmCancel(sheetAppt) },
-              ]
-            : []
-        }
+        onViewClient={(a) => { setSheetAppt(null); if (a.client_id) router.push(`/client/${a.client_id}`); }}
+        onEdit={(a) => { setSheetAppt(null); rescheduleAppt(a); }}
+        onDelete={(a) => { setSheetAppt(null); confirmCancel(a); }}
       />
     </View>
   );

@@ -24,7 +24,10 @@ const PATHS: Record<string, string> = {
   back: '<path d="M19 12H5M12 19l-7-7 7-7"/>',
   chevR: '<path d="m9 18 6-6-6-6"/>',
   chevD: '<path d="m6 9 6 6 6-6"/>',
-  send: '<path d="M14.5 4.5 21 3l-1.5 6.5M3 11l18-8-8 18-2.5-7.5L3 11Z"/>',
+  send: '<path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7Z"/>',
+  mic: '<rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1M12 18v4"/>',
+  camera: '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2v11Z"/><circle cx="12" cy="13" r="4"/>',
+  trash: '<path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14Z"/><path d="M10 11v6M14 11v6"/>',
   archive:
     '<rect x="3" y="3" width="18" height="5" rx="1"/><path d="M5 8v11a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a7 7 0 0 1 14 0v1"/>',
