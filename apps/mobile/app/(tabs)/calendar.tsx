@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Pressable, ScrollView, ActivityIndicator } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { runOnJS } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { Icon } from "@/components/ui/Icon";
@@ -9,7 +11,7 @@ import { WeekGrid } from "@/components/calendar/WeekGrid";
 import { MonthGrid } from "@/components/calendar/MonthGrid";
 import { useAppointments, type Appointment } from "@/lib/useAppointments";
 import {
-  todayKey, dayStrip, weekStrip, monthStrip, weekStart, parseKey,
+  todayKey, dayStrip, weekStrip, monthStrip, weekStart, parseKey, addDaysKey,
   dayHeaderLabel, monthLabel,
 } from "@/lib/calendar";
 import { colors } from "@/theme/colors";
@@ -53,6 +55,20 @@ export default function CalendarScreen() {
   function openAppt(a: Appointment) {
     if (a.client_id) router.push(`/client/${a.client_id}`);
   }
+
+  // Swipe left/right to move between days (Day view) or weeks (Week view).
+  function navigate(dir: -1 | 1) {
+    if (view === "day") setDayKey((k) => addDaysKey(k, dir));
+    else if (view === "week") setWeekKey((k) => addDaysKey(k, dir * 7));
+    else setMonthIdx((m) => Math.min(11, Math.max(0, m + dir)));
+  }
+  const swipe = Gesture.Pan()
+    .activeOffsetX([-20, 20]) // horizontal intent only; lets vertical scroll win
+    .failOffsetY([-12, 12])
+    .onEnd((e) => {
+      if (e.translationX <= -50) runOnJS(navigate)(1);
+      else if (e.translationX >= 50) runOnJS(navigate)(-1);
+    });
 
   return (
     <View className="flex-1 bg-bg" style={{ paddingTop: insets.top }}>
@@ -125,11 +141,13 @@ export default function CalendarScreen() {
       {loading ? (
         <View className="flex-1 items-center justify-center"><ActivityIndicator color={colors.ink4} /></View>
       ) : (
-        <ScrollView className="flex-1 bg-surface" contentContainerStyle={{ paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 16 }} showsVerticalScrollIndicator={false}>
-          {view === "day" && <DayGrid dayKey={dayKey} appts={items} onOpen={openAppt} />}
-          {view === "week" && <WeekGrid weekStartKey={weekKey} appts={items} onPickDay={(k) => { setDayKey(k); setView("day"); }} onOpen={openAppt} />}
-          {view === "month" && <MonthGrid year={year} monthIdx={monthIdx} appts={items} onPickDay={(k) => { setDayKey(k); setView("day"); }} />}
-        </ScrollView>
+        <GestureDetector gesture={swipe}>
+          <ScrollView className="flex-1 bg-surface" contentContainerStyle={{ paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 16 }} showsVerticalScrollIndicator={false}>
+            {view === "day" && <DayGrid dayKey={dayKey} appts={items} onOpen={openAppt} />}
+            {view === "week" && <WeekGrid weekStartKey={weekKey} appts={items} onPickDay={(k) => { setDayKey(k); setView("day"); }} onOpen={openAppt} />}
+            {view === "month" && <MonthGrid year={year} monthIdx={monthIdx} appts={items} onPickDay={(k) => { setDayKey(k); setView("day"); }} />}
+          </ScrollView>
+        </GestureDetector>
       )}
 
       {/* FAB → Book sheet */}

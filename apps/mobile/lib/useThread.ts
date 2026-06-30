@@ -27,10 +27,20 @@ export function useThread(conversationId: string) {
   const pending = useRef<ThreadMessage[]>([]); // optimistic, not yet in DB
 
   const merge = useCallback((dbRows: MessageRow[]) => {
-    // DB rows are the source of truth; keep any still-pending optimistic rows
-    // that haven't shown up from the server yet (matched by channel-less temp).
-    setMessages([...dbRows, ...pending.current]);
-  }, []);
+    // DB rows are the source of truth; keep any still-pending optimistic rows —
+    // but ONLY ones for THIS conversation. (pending persisted across threads,
+    // so messages sent in one chat were leaking into others.)
+    const mine = pending.current.filter((m) => m.conversation_id === conversationId);
+    setMessages([...dbRows, ...mine]);
+  }, [conversationId]);
+
+  // Reset optimistic state whenever the open conversation changes, so a pending
+  // bubble from a previous thread can never render in this one.
+  useEffect(() => {
+    pending.current = [];
+    setMessages([]);
+    setLoading(true);
+  }, [conversationId]);
 
   const loadMessages = useCallback(async () => {
     const { data } = await supabase

@@ -14,6 +14,7 @@ function timeLabel(iso: string): string {
     timeZone: "America/New_York",
     hour: "numeric",
     minute: "2-digit",
+    hour12: true,
   });
 }
 

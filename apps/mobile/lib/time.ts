@@ -16,6 +16,7 @@ export function inboxTime(iso: string | null): string {
       timeZone: TZ,
       hour: "numeric",
       minute: "2-digit",
+      hour12: true,
     });
   }
   if (days === 1) return "Yesterday";

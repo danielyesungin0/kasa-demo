@@ -157,9 +157,12 @@ export default function BookScreen() {
   const renderFooter = useCallback(
     (props: BottomSheetFooterProps) => {
       if (loading || result) return null;
+      // bottomInset=0 so the footer sits FLUSH to the bottom edge (no gap below
+      // it where content would show through); the safe-area is added as the
+      // footer's own bottom padding instead.
       return (
-        <BottomSheetFooter {...props} bottomInset={insets.bottom}>
-          <View onLayout={(e) => setFooterH(e.nativeEvent.layout.height)} className="border-t border-line bg-bg px-5 pt-3 pb-3">
+        <BottomSheetFooter {...props} bottomInset={0}>
+          <View onLayout={(e) => setFooterH(e.nativeEvent.layout.height)} className="border-t border-line bg-bg px-5 pt-3" style={{ paddingBottom: Math.max(insets.bottom, 12) }}>
             <Text className={ready ? "text-ink-2" : "text-ink-4"} style={{ fontSize: 13, marginBottom: 8, textAlign: "center" }}>
               {ready && svc && slot
                 ? `${days.find((d) => d.key === dayKey)?.dow} ${days.find((d) => d.key === dayKey)?.n} · ${slot.label} · ${svc.name}`
@@ -223,7 +226,7 @@ export default function BookScreen() {
       ) : loading ? (
         <View className="flex-1 items-center justify-center"><ActivityIndicator color={colors.ink4} /></View>
       ) : (
-        <BottomSheetScrollView contentContainerStyle={{ padding: 20, paddingTop: 4, paddingBottom: footerH + insets.bottom + 24 }} keyboardShouldPersistTaps="handled">
+        <BottomSheetScrollView contentContainerStyle={{ padding: 20, paddingTop: 4, paddingBottom: footerH + 24 }} keyboardShouldPersistTaps="handled">
           {/* header */}
           <View className="flex-row items-center self-start rounded-pill bg-plum-soft px-2.5 py-1.5" style={{ gap: 5 }}>
             <Icon name="calendar" size={13} color={colors.plumInk} />
