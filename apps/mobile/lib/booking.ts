@@ -243,6 +243,28 @@ export async function createBooking(args: {
   return { ok: true, appointmentId: (data as any).id, idempotencyKey: idemKey };
 }
 
+/** Cancel an appointment — syncs to Square (frees the slot) and marks the local
+ *  row canceled. Returns ok/error for honest UI. */
+export async function cancelBooking(appointmentId: string): Promise<BookResult> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData.session?.access_token;
+  if (!token) return { ok: false, error: "You're signed out — sign in and retry." };
+  try {
+    const res = await fetch(`${FUNCTIONS_URL}/square-cancel-booking`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ appointment_id: appointmentId }),
+    });
+    const json = await res.json();
+    if (!res.ok || json.error) {
+      return { ok: false, error: squareErrorMessage(json.error) };
+    }
+    return { ok: true, appointmentId, idempotencyKey: "" };
+  } catch {
+    return { ok: false, error: "Couldn't reach Square. Nothing was changed." };
+  }
+}
+
 function squareErrorMessage(err: unknown): string {
   const code = typeof err === "string" ? err : "";
   if (code === "no_token" || code === "token_invalid") return "Square connection expired — reconnect in Settings.";

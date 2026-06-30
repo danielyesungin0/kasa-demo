@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Pressable, ScrollView, ActivityIndicator } from "react-native";
+import { View, Pressable, ScrollView, ActivityIndicator, ActionSheetIOS, Alert } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -10,6 +10,7 @@ import { DayGrid } from "@/components/calendar/DayGrid";
 import { WeekGrid } from "@/components/calendar/WeekGrid";
 import { MonthGrid } from "@/components/calendar/MonthGrid";
 import { useAppointments, type Appointment } from "@/lib/useAppointments";
+import { cancelBooking } from "@/lib/booking";
 import {
   todayKey, dayStrip, weekStrip, monthStrip, weekStart, parseKey, addDaysKey,
   dayHeaderLabel, monthLabel,
@@ -53,7 +54,47 @@ export default function CalendarScreen() {
     : monthLabel(monthIdx, year);
 
   function openAppt(a: Appointment) {
-    if (a.client_id) router.push(`/client/${a.client_id}`);
+    // Tap an appointment → action sheet: View client / Reschedule / Cancel.
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        title: `${a.clientName} · ${a.serviceName ?? "Appointment"}`,
+        options: ["View client", "Reschedule", "Cancel appointment", "Close"],
+        destructiveButtonIndex: 2,
+        cancelButtonIndex: 3,
+      },
+      (idx) => {
+        if (idx === 0 && a.client_id) router.push(`/client/${a.client_id}`);
+        else if (idx === 1) rescheduleAppt(a);
+        else if (idx === 2) confirmCancel(a);
+      },
+    );
+  }
+
+  function confirmCancel(a: Appointment) {
+    Alert.alert(
+      "Cancel appointment?",
+      `${a.clientName} · ${a.serviceName ?? "Appointment"}. This cancels it in Square too.`,
+      [
+        { text: "Keep it", style: "cancel" },
+        {
+          text: "Cancel appointment", style: "destructive",
+          onPress: async () => {
+            const res = await cancelBooking(a.id);
+            if (res.ok) reload();
+            else Alert.alert("Couldn't cancel", res.error ?? "Try again.");
+          },
+        },
+      ],
+    );
+  }
+
+  // Reschedule = cancel-then-rebook (Square has no in-place reschedule for this
+  // flow; this keeps Square the source of truth). Opens Book prefilled.
+  async function rescheduleAppt(a: Appointment) {
+    const res = await cancelBooking(a.id);
+    if (!res.ok) { Alert.alert("Couldn't reschedule", res.error ?? "Try again."); return; }
+    reload();
+    if (a.client_id) router.push(`/book?client=${a.client_id}&day=${dayKey}`);
   }
 
   // Swipe left/right to move between days (Day view) or weeks (Week view).

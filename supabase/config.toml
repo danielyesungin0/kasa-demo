@@ -19,6 +19,10 @@ verify_jwt = false
 [functions.square-create-booking]
 verify_jwt = true
 
+# square-cancel-booking: cancels on Square + locally. Authenticated stylist only.
+[functions.square-cancel-booking]
+verify_jwt = true
+
 # Channel webhooks are called by external providers (Meta/WeChat/Twilio/Kakao),
 # never by the app — they authenticate via provider signatures (Phase 4), not a
 # Supabase JWT. So verify_jwt=false; signature checks are the real gate.
