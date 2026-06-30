@@ -75,7 +75,7 @@ export default function CalendarScreen() {
       {/* header */}
       <View className="border-b border-line px-gutter pb-2.5 pt-3">
         <View className="mb-3 flex-row items-center justify-between" style={{ minHeight: 40 }}>
-          <Text variant="title-lg">{periodLabel}</Text>
+          <Text variant="title">{periodLabel}</Text>
           <View className="flex-row items-center rounded-pill bg-ok-soft px-2.5 py-1.5" style={{ gap: 5 }}>
             <Icon name="link" size={12} color={colors.okInk} />
             <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.okInk }}>Square</Text>

@@ -46,7 +46,7 @@ export function ScreenHeader({
 }) {
   return (
     <View className="flex-row items-center justify-between px-gutter pb-3 pt-3">
-      <Text variant="title-lg">{title}</Text>
+      <Text variant="title">{title}</Text>
       {right}
     </View>
   );

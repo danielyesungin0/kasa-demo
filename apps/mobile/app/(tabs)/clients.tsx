@@ -35,7 +35,7 @@ export default function ClientsScreen() {
     <View className="flex-1 bg-bg" style={{ paddingTop: insets.top }}>
       {/* header */}
       <View className="flex-row items-center px-gutter pb-2.5 pt-3" style={{ gap: 8, minHeight: 40 }}>
-        <Text variant="title-lg">Clients</Text>
+        <Text variant="title">Clients</Text>
         <View className="rounded-pill bg-bg-warm px-2 py-0.5">
           <Text tabular style={{ fontSize: 12.5, fontFamily: "Inter_700Bold", color: colors.ink3 }}>{items.length}</Text>
         </View>

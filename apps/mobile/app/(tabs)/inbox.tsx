@@ -61,7 +61,7 @@ export default function InboxScreen() {
       {/* header */}
       <View className="px-gutter pb-2.5 pt-3">
         <View className="mb-3" style={{ minHeight: 40, justifyContent: "center" }}>
-          <Text variant="title-lg">Inbox</Text>
+          <Text variant="title">Inbox</Text>
         </View>
 
         {/* search — filters by client name or message text */}

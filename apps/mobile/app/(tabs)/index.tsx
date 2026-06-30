@@ -60,7 +60,9 @@ export default function TodayScreen() {
               <Text variant="eyebrow" className="mb-1 text-accent">{dateLabel}</Text>
               <Text variant="display-lg">{greeting},{"\n"}Shen</Text>
             </View>
-            <Avatar name="Shen Lee" size={44} />
+            <Pressable onPress={() => router.push("/(tabs)/more")} accessibilityRole="button" accessibilityLabel="Profile">
+              <Avatar name="Shen Lee" size={44} />
+            </Pressable>
           </View>
           <Text variant="body" className="mt-3 text-ink-3">
             {unreadCount} new {unreadCount === 1 ? "message" : "messages"} · {todays.length} appointment{todays.length === 1 ? "" : "s"} today

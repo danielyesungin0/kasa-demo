@@ -148,7 +148,7 @@ export default function BookScreen() {
   // ── Result screen ──
   if (result) {
     return (
-      <View className="flex-1 bg-bg" style={{ paddingTop: insets.top }}>
+      <View className="flex-1 bg-bg" style={{ paddingTop: 8 }}>
         <View className="flex-1 items-center justify-center px-gutter">
           <View className="items-center justify-center rounded-full" style={{ width: 72, height: 72, backgroundColor: result.ok ? colors.okSoft : colors.errSoft }}>
             <Icon name={result.ok ? "checkCircle" : "alert"} size={36} color={result.ok ? colors.okInk : colors.errInk} />
@@ -181,7 +181,9 @@ export default function BookScreen() {
   }
 
   return (
-    <View className="flex-1 bg-bg" style={{ paddingTop: insets.top }}>
+    // No insets.top — the native iOS modal card already starts below the status
+    // bar; adding the inset created a big empty gap at the top.
+    <View className="flex-1 bg-bg" style={{ paddingTop: 8 }}>
       {/* Top nav bar: Cancel · title · Confirm (Google/Apple Calendar pattern) */}
       <View className="flex-row items-center justify-between border-b border-line px-4" style={{ minHeight: 52 }}>
         <Pressable onPress={() => router.back()} accessibilityRole="button" hitSlop={8} style={{ minWidth: 60 }}>
