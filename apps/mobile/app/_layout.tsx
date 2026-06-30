@@ -97,10 +97,7 @@ export default function RootLayout() {
               <Stack.Screen name="settings/channels" />
               <Stack.Screen
                 name="book"
-                options={{
-                  presentation: "transparentModal",
-                  animation: "fade",
-                }}
+                options={{ presentation: "modal" }}
               />
             </Stack>
           </Guard>

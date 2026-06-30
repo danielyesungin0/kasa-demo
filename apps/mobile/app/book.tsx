@@ -1,17 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Pressable, ScrollView, ActivityIndicator } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { View, Pressable, ScrollView, ActivityIndicator, TextInput } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import BottomSheet, {
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-  BottomSheetFooter,
-  BottomSheetBackdrop,
-  type BottomSheetFooterProps,
-} from "@gorhom/bottom-sheet";
 import { Icon } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
 import { Avatar } from "@/components/ui/Avatar";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { useAppointments } from "@/lib/useAppointments";
 import { listServices, fetchAllSlots, availableSlots, createBooking, type Service, type Slot } from "@/lib/booking";
 import { dayStrip, weekStart, todayKey } from "@/lib/calendar";
@@ -20,18 +14,16 @@ import { colors } from "@/theme/colors";
 
 type Client = { id: string; name: string; phone: string | null };
 
-// The Book sheet — built on @gorhom/bottom-sheet for a proper modal sheet:
-//   • fixed title (doesn't scroll), • scrollable form body, • STICKY Confirm
-//     footer (BottomSheetFooter), • drag-down / backdrop-tap to dismiss.
-// This is the standard bottom-sheet pattern (Material/iOS): the CTA stays put
-// while content scrolls. Guardrails: nothing books without the explicit Confirm
-// tap; copy never claims the AI booked it; honest success/failure.
+// The Book screen — a FULL-SCREEN modal with the primary action in the top nav
+// bar (Cancel · title · Confirm), like Google/Apple Calendar's event editor.
+// This avoids the floating-footer issues a bottom sheet has (gaps, jump,
+// keyboard overlap, search-vs-CTA conflict). Content loads with skeletons.
+// Guardrails: nothing books without the explicit "Confirm" tap; honest result.
 export default function BookScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ day?: string; conversation?: string; client?: string }>();
   const { items: appts } = useAppointments();
-  const sheetRef = useRef<BottomSheet>(null);
 
   const [services, setServices] = useState<Service[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -49,7 +41,6 @@ export default function BookScreen() {
 
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; error?: string } | null>(null);
-  const [footerH, setFooterH] = useState(180); // measured; pads scroll so content clears the sticky footer
 
   const days = useMemo(() => dayStrip(weekStart(todayKey()), 14), []);
 
@@ -58,16 +49,6 @@ export default function BookScreen() {
     const base = q ? clients.filter((c) => c.name.toLowerCase().includes(q)) : clients;
     return base.slice(0, 20);
   }, [clients, clientQuery]);
-
-  // Dismiss = pop the route. Guard against double-fire (pan-down close AND
-  // backdrop press can both call onClose → a second back() pops the thread too,
-  // leaving a blank screen).
-  const closedRef = useRef(false);
-  const close = useCallback(() => {
-    if (closedRef.current) return;
-    closedRef.current = true;
-    router.back();
-  }, [router]);
 
   useEffect(() => {
     (async () => {
@@ -153,265 +134,223 @@ export default function BookScreen() {
     setResult(res.ok ? { ok: true } : { ok: false, error: res.error });
   }
 
-  // Sticky footer — stays pinned above the keyboard/safe-area while body scrolls.
-  const renderFooter = useCallback(
-    (props: BottomSheetFooterProps) => {
-      if (loading || result) return null;
-      // bottomInset=0 so the footer sits FLUSH to the bottom edge (no gap below
-      // it where content would show through); the safe-area is added as the
-      // footer's own bottom padding instead.
-      return (
-        <BottomSheetFooter {...props} bottomInset={0}>
-          <View onLayout={(e) => setFooterH(e.nativeEvent.layout.height)} className="border-t border-line bg-bg px-5 pt-3" style={{ paddingBottom: Math.max(insets.bottom, 12) }}>
-            <Text className={ready ? "text-ink-2" : "text-ink-4"} style={{ fontSize: 13, marginBottom: 8, textAlign: "center" }}>
-              {ready && svc && slot
-                ? `${days.find((d) => d.key === dayKey)?.dow} ${days.find((d) => d.key === dayKey)?.n} · ${slot.label} · ${svc.name}`
-                : client ? "Pick a service and a time" : "Pick a client, service and time"}
-            </Text>
-            <Pressable onPress={confirm} disabled={!ready || submitting} accessibilityRole="button"
-              className="flex-row items-center justify-center rounded-control-lg" style={{ height: 52, backgroundColor: ready ? colors.plumStrong : colors.bgWarm, opacity: submitting ? 0.7 : 1 }}>
-              {submitting ? <ActivityIndicator color="#fff" /> : (
-                <>
-                  <Icon name="check" size={16} color={ready ? "#fff" : colors.ink2} />
-                  <Text style={{ marginLeft: 8, fontSize: 15.5, fontFamily: "Inter_600SemiBold", color: ready ? "#fff" : colors.ink2 }}>Confirm in Square</Text>
-                </>
-              )}
-            </Pressable>
-            <Text className="mt-2 text-center text-ink-4" style={{ fontSize: 11.5, lineHeight: 15 }}>
-              Reviewed by you — created in Square only when you confirm
-            </Text>
+  function done() {
+    if (originConvo && client && svc && slot) {
+      const d = days.find((x) => x.key === dayKey);
+      const when = d ? `${d.dow} the ${d.n}` : "your appointment";
+      const draft = `Hi ${client.name.split(" ")[0].replace(/^@/, "")}! You're booked for a ${svc.name} on ${when} at ${slot.label}. See you then! 🤍`;
+      router.replace(`/thread/${originConvo}?draft=${encodeURIComponent(draft)}&booked=1`);
+    } else {
+      router.replace(`/(tabs)/calendar?day=${dayKey}`);
+    }
+  }
+
+  // ── Result screen ──
+  if (result) {
+    return (
+      <View className="flex-1 bg-bg" style={{ paddingTop: insets.top }}>
+        <View className="flex-1 items-center justify-center px-gutter">
+          <View className="items-center justify-center rounded-full" style={{ width: 72, height: 72, backgroundColor: result.ok ? colors.okSoft : colors.errSoft }}>
+            <Icon name={result.ok ? "checkCircle" : "alert"} size={36} color={result.ok ? colors.okInk : colors.errInk} />
           </View>
-        </BottomSheetFooter>
-      );
-    },
-    [loading, result, ready, svc, slot, client, dayKey, days, submitting],
-  );
-
-  const renderBackdrop = useCallback(
-    (props: any) => <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} pressBehavior="close" />,
-    [],
-  );
-
-  return (
-    <BottomSheet
-      ref={sheetRef}
-      index={0}
-      snapPoints={["92%"]}
-      enablePanDownToClose
-      onClose={close}
-      backdropComponent={renderBackdrop}
-      handleIndicatorStyle={{ backgroundColor: colors.line2, width: 38 }}
-      backgroundStyle={{ backgroundColor: colors.bg }}
-      footerComponent={renderFooter}
-    >
-      {result ? (
-        <ResultView
-          result={result} client={client} svc={svc} slot={slot} dayKey={dayKey}
-          onClose={() => {
-            if (!result.ok) { close(); return; }
-            // Booked from a conversation → return to that thread with a
-            // pre-filled confirmation DRAFT (stylist reviews + sends; never
-            // auto-sent). Otherwise show it on the calendar.
-            if (originConvo && client && svc && slot) {
-              const d = days.find((x) => x.key === dayKey);
-              const when = d ? `${d.dow} the ${d.n}` : "your appointment";
-              const draft = `Hi ${client.name.split(" ")[0].replace(/^@/, "")}! You're booked for a ${svc.name} on ${when} at ${slot.label}. See you then! 🤍`;
-              router.replace(`/thread/${originConvo}?draft=${encodeURIComponent(draft)}&booked=1`);
-            } else {
-              router.replace(`/(tabs)/calendar?day=${dayKey}`);
-            }
-          }}
-          onRetry={() => setResult(null)}
-        />
-      ) : loading ? (
-        <View className="flex-1 items-center justify-center"><ActivityIndicator color={colors.ink4} /></View>
-      ) : (
-        <BottomSheetScrollView contentContainerStyle={{ padding: 20, paddingTop: 4, paddingBottom: footerH + 24 }} keyboardShouldPersistTaps="handled">
-          {/* header */}
-          <View className="flex-row items-center self-start rounded-pill bg-plum-soft px-2.5 py-1.5" style={{ gap: 5 }}>
-            <Icon name="calendar" size={13} color={colors.plumInk} />
-            <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.plumInk }}>New appointment</Text>
-          </View>
-          <Text variant="display" className="mt-2.5">{client ? `Book ${client.name.split(" ")[0]}` : "New booking"}</Text>
-
-          {/* For (client) */}
-          {!fixedClient ? (
-            <View className="mt-5">
-              <Text className="mb-2 text-ink-4" style={{ fontSize: 12, fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>FOR</Text>
-              {client ? (
-                <Pressable onPress={() => setClient(null)} className="flex-row items-center self-start rounded-control border border-line-2 bg-surface py-2 pl-2 pr-3.5" style={{ gap: 9 }}>
-                  <Avatar name={client.name} size={30} />
-                  <Text style={{ fontSize: 14.5, fontFamily: "Inter_600SemiBold", color: colors.ink }}>{client.name}</Text>
-                  <Text className="text-accent-ink" style={{ fontSize: 13, fontFamily: "Inter_600SemiBold" }}>Change</Text>
-                </Pressable>
-              ) : (
-                <View>
-                  <View className="flex-row items-center rounded-control-lg border border-line-2 bg-surface px-3.5" style={{ height: 48, gap: 8 }}>
-                    <Icon name="search" size={16} color={colors.ink4} />
-                    <BottomSheetTextInput
-                      value={clientQuery}
-                      onChangeText={setClientQuery}
-                      onFocus={() => setClientFocused(true)}
-                      placeholder="Search clients"
-                      placeholderTextColor={colors.ink4}
-                      autoCapitalize="none"
-                      style={{ flex: 1, fontFamily: "Inter_400Regular", fontSize: 16, color: colors.ink, padding: 0 }}
-                    />
-                    {clientQuery ? (
-                      <Pressable onPress={() => setClientQuery("")} hitSlop={8} accessibilityLabel="Clear"><Icon name="x" size={15} color={colors.ink4} /></Pressable>
-                    ) : null}
-                  </View>
-                  {(clientFocused || clientQuery) ? (
-                    <View className="mt-2 overflow-hidden rounded-control-lg border border-line-2 bg-surface">
-                      {clientMatches.length === 0 ? (
-                        <View className="px-4 py-3"><Text className="text-ink-4" style={{ fontSize: 13.5 }}>No matches.</Text></View>
-                      ) : (
-                        clientMatches.map((c, i) => (
-                          <Pressable key={c.id} onPress={() => { setClient(c); setClientQuery(""); setClientFocused(false); }} accessibilityRole="button"
-                            className={`flex-row items-center px-3 py-2.5 ${i > 0 ? "border-t border-line" : ""}`} style={{ gap: 10, minHeight: 48 }}>
-                            <Avatar name={c.name} size={34} />
-                            <Text numberOfLines={1} className="text-ink" style={{ fontSize: 14.5, fontFamily: "Inter_500Medium" }}>{c.name}</Text>
-                          </Pressable>
-                        ))
-                      )}
-                    </View>
-                  ) : null}
-                </View>
-              )}
-            </View>
-          ) : null}
-
-          {/* Service */}
-          <View className="mt-5">
-            <Text className="mb-2 text-ink-4" style={{ fontSize: 12, fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>SERVICE</Text>
-            <Pressable onPress={() => setPickSvc((p) => !p)} accessibilityRole="button" accessibilityState={{ expanded: pickSvc }} className="flex-row items-center justify-between rounded-control-lg border border-line-2 bg-surface px-4" style={{ minHeight: 52 }}>
-              {svc ? (
-                <View className="flex-row items-baseline" style={{ gap: 8 }}>
-                  <Text style={{ fontSize: 15, fontFamily: "Inter_600SemiBold", color: colors.ink }}>{svc.name}</Text>
-                  <Text className="text-ink-3" style={{ fontSize: 12.5 }}>{svc.duration_minutes}m · ${(svc.price_cents / 100).toFixed(0)}</Text>
-                </View>
-              ) : (
-                <Text className="text-ink-4" style={{ fontSize: 15 }}>Choose a service</Text>
-              )}
-              <Icon name={pickSvc ? "chevD" : "chevR"} size={16} color={colors.ink4} />
-            </Pressable>
-            {pickSvc ? (
-              <View className="mt-2 overflow-hidden rounded-control-lg border border-line-2 bg-surface">
-                {services.map((s, i) => {
-                  const on = svc?.id === s.id;
-                  return (
-                    <Pressable key={s.id} onPress={() => { setSvc(s); setPickSvc(false); }} accessibilityRole="button" className={`flex-row items-center justify-between px-4 py-3.5 ${i > 0 ? "border-t border-line" : ""} ${on ? "bg-plum-soft" : ""}`} style={{ minHeight: 44 }}>
-                      <Text style={{ fontSize: 14.5, fontFamily: "Inter_600SemiBold", color: on ? colors.plumInk : colors.ink }}>{s.name}</Text>
-                      <Text className="text-ink-3" style={{ fontSize: 12.5 }}>{s.duration_minutes}m · ${(s.price_cents / 100).toFixed(0)}</Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+          <Text variant="display" className="mt-5 text-center">
+            {result.ok ? "Booked in Square" : "Couldn't reach Square"}
+          </Text>
+          {result.ok && client && svc && slot ? (
+            <Text variant="body" className="mt-2 text-center text-ink-3">
+              {client.name} · {svc.name} · {slot.label}. It's on your calendar.
+            </Text>
+          ) : (
+            <Text variant="body" className="mt-2 text-center text-ink-3">
+              {result.error ?? "Nothing was booked."} Nothing was created — you can retry.
+            </Text>
+          )}
+          <View className="mt-7 w-full" style={{ gap: 10 }}>
+            {!result.ok ? (
+              <Pressable onPress={() => setResult(null)} accessibilityRole="button" className="items-center justify-center rounded-control-lg bg-plum-strong" style={{ height: 52 }}>
+                <Text className="text-white" style={{ fontSize: 15.5, fontFamily: "Inter_600SemiBold" }}>Try again</Text>
+              </Pressable>
             ) : null}
+            <Pressable onPress={result.ok ? done : () => router.back()} accessibilityRole="button" className="items-center justify-center rounded-control-lg border border-line-2 bg-surface" style={{ height: 52 }}>
+              <Text style={{ fontSize: 15.5, fontFamily: "Inter_600SemiBold", color: colors.ink }}>{result.ok ? "Done" : "Close"}</Text>
+            </Pressable>
           </View>
-
-          {/* Day */}
-          <View className="mt-5">
-            <Text className="mb-2 text-ink-4" style={{ fontSize: 12, fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>DAY</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7 }}>
-              {days.map((d) => {
-                const on = d.key === dayKey;
-                return (
-                  <Pressable key={d.key} onPress={() => { setDayKey(d.key); setSlot(null); }} accessibilityRole="button"
-                    className={`items-center justify-center rounded-[15px] border ${on ? "border-ink bg-ink" : "border-line-2 bg-surface"}`} style={{ width: 50, height: 54, gap: 3 }}>
-                    <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: on ? "#fff" : d.isToday ? colors.accent : colors.ink4 }}>{d.dow}</Text>
-                    <Text tabular style={{ fontSize: 17, fontFamily: "Inter_600SemiBold", color: on ? "#fff" : colors.ink2 }}>{d.n}</Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          </View>
-
-          {/* Available times */}
-          <View className="mt-5">
-            <Text className="mb-2 text-ink-4" style={{ fontSize: 12, fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>
-              AVAILABLE TIMES{svc ? ` · ${svc.duration_minutes}m` : ""}
-            </Text>
-            {!svc ? (
-              <Text className="text-ink-3" style={{ fontSize: 13.5 }}>Pick a service first so times fit around your day.</Text>
-            ) : slotsLoading ? (
-              <View>
-                {["Morning", "Afternoon"].map((label) => (
-                  <View key={label} className="mb-3">
-                    <View className="mb-2 rounded bg-bg-warm" style={{ width: 72, height: 12 }} />
-                    <View className="flex-row flex-wrap" style={{ gap: 8 }}>
-                      {Array.from({ length: 6 }).map((_, i) => (
-                        <View key={i} className="rounded-control bg-bg-warm" style={{ width: 92, height: 44, opacity: 0.6 }} />
-                      ))}
-                    </View>
-                  </View>
-                ))}
-              </View>
-            ) : slots.length === 0 ? (
-              <Text className="text-ink-3 py-2" style={{ fontSize: 13.5, lineHeight: 19 }}>
-                No openings this day. Try another day above.
-              </Text>
-            ) : (
-              groups
-                .filter(([, gslots]) => gslots.length > 0)
-                .map(([label, gslots]) => (
-                  <View key={label} className="mb-3">
-                    <Text className="mb-1.5 text-ink-3" style={{ fontSize: 12.5, fontFamily: "Inter_600SemiBold" }}>{label}</Text>
-                    <View className="flex-row flex-wrap" style={{ gap: 8 }}>
-                      {gslots.map((s) => {
-                        const on = slot?.startHour === s.startHour;
-                        return (
-                          <Pressable key={`${label}-${s.startHour}-${s.label}`} onPress={() => setSlot(s)} accessibilityRole="button" accessibilityState={on ? { selected: true } : {}}
-                            className={`items-center justify-center rounded-control border ${on ? "border-plum-strong bg-plum-strong" : "border-line-2 bg-surface"}`} style={{ minHeight: 44, paddingHorizontal: 14 }}>
-                            <Text style={{ fontSize: 13.5, fontFamily: "Inter_600SemiBold", color: on ? "#fff" : colors.ink }}>{s.label}</Text>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                  </View>
-                ))
-            )}
-          </View>
-        </BottomSheetScrollView>
-      )}
-    </BottomSheet>
-  );
-}
-
-function ResultView({
-  result, client, svc, slot, onClose, onRetry,
-}: {
-  result: { ok: boolean; error?: string };
-  client: Client | null; svc: Service | null; slot: Slot | null; dayKey: string;
-  onClose: () => void; onRetry: () => void;
-}) {
-  return (
-    <View className="flex-1 items-center justify-center px-gutter" style={{ paddingVertical: 40 }}>
-      <View className="items-center justify-center rounded-full" style={{ width: 72, height: 72, backgroundColor: result.ok ? colors.okSoft : colors.errSoft }}>
-        <Icon name={result.ok ? "checkCircle" : "alert"} size={36} color={result.ok ? colors.okInk : colors.errInk} />
+        </View>
       </View>
-      <Text variant="display" className="mt-5 text-center">
-        {result.ok ? "Booked in Square" : "Couldn't reach Square"}
-      </Text>
-      {result.ok && client && svc && slot ? (
-        <Text variant="body" className="mt-2 text-center text-ink-3">
-          {client.name} · {svc.name} · {slot.label}. It's on your calendar.
-        </Text>
-      ) : (
-        <Text variant="body" className="mt-2 text-center text-ink-3">
-          {result.error ?? "Nothing was booked."} Nothing was created — you can retry.
-        </Text>
-      )}
-      <View className="mt-7 w-full" style={{ gap: 10 }}>
-        {!result.ok ? (
-          <Pressable onPress={onRetry} accessibilityRole="button" className="items-center justify-center rounded-control-lg bg-plum-strong" style={{ height: 52 }}>
-            <Text className="text-white" style={{ fontSize: 15.5, fontFamily: "Inter_600SemiBold" }}>Try again</Text>
-          </Pressable>
-        ) : null}
-        <Pressable onPress={onClose} accessibilityRole="button" className="items-center justify-center rounded-control-lg border border-line-2 bg-surface" style={{ height: 52 }}>
-          <Text style={{ fontSize: 15.5, fontFamily: "Inter_600SemiBold", color: colors.ink }}>{result.ok ? "Done" : "Close"}</Text>
+    );
+  }
+
+  return (
+    <View className="flex-1 bg-bg" style={{ paddingTop: insets.top }}>
+      {/* Top nav bar: Cancel · title · Confirm (Google/Apple Calendar pattern) */}
+      <View className="flex-row items-center justify-between border-b border-line px-4" style={{ minHeight: 52 }}>
+        <Pressable onPress={() => router.back()} accessibilityRole="button" hitSlop={8} style={{ minWidth: 60 }}>
+          <Text className="text-ink-3" style={{ fontSize: 16 }}>Cancel</Text>
+        </Pressable>
+        <Text style={{ fontSize: 16, fontFamily: "Inter_600SemiBold", color: colors.ink }}>New appointment</Text>
+        <Pressable onPress={confirm} disabled={!ready || submitting} accessibilityRole="button" hitSlop={8} style={{ minWidth: 60, alignItems: "flex-end" }}>
+          {submitting ? (
+            <ActivityIndicator size="small" color={colors.plumStrong} />
+          ) : (
+            <Text style={{ fontSize: 16, fontFamily: "Inter_700Bold", color: ready ? colors.plumStrong : colors.ink4 }}>Confirm</Text>
+          )}
         </Pressable>
       </View>
+
+      <ScrollView className="flex-1" contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 40 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <Text variant="display" className="mb-1">{client ? `Book ${client.name.split(" ")[0].replace(/^@/, "")}` : "New booking"}</Text>
+
+        {/* For (client) — searchable; full focus, no competing CTA */}
+        {!fixedClient ? (
+          <View className="mt-4">
+            <Text className="mb-2 text-ink-4" style={{ fontSize: 12, fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>FOR</Text>
+            {client ? (
+              <Pressable onPress={() => setClient(null)} className="flex-row items-center self-start rounded-control border border-line-2 bg-surface py-2 pl-2 pr-3.5" style={{ gap: 9 }}>
+                <Avatar name={client.name} size={30} />
+                <Text style={{ fontSize: 14.5, fontFamily: "Inter_600SemiBold", color: colors.ink }}>{client.name}</Text>
+                <Text className="text-accent-ink" style={{ fontSize: 13, fontFamily: "Inter_600SemiBold" }}>Change</Text>
+              </Pressable>
+            ) : (
+              <View>
+                <View className="flex-row items-center rounded-control-lg border border-line-2 bg-surface px-3.5" style={{ height: 48, gap: 8 }}>
+                  <Icon name="search" size={16} color={colors.ink4} />
+                  <TextInput
+                    value={clientQuery}
+                    onChangeText={setClientQuery}
+                    onFocus={() => setClientFocused(true)}
+                    placeholder="Search clients"
+                    placeholderTextColor={colors.ink4}
+                    autoCapitalize="none"
+                    className="flex-1 text-body text-ink"
+                    style={{ fontFamily: "Inter_400Regular", padding: 0 }}
+                  />
+                  {clientQuery ? (
+                    <Pressable onPress={() => setClientQuery("")} hitSlop={8} accessibilityLabel="Clear"><Icon name="x" size={15} color={colors.ink4} /></Pressable>
+                  ) : null}
+                </View>
+                {(clientFocused || clientQuery) ? (
+                  <View className="mt-2 overflow-hidden rounded-control-lg border border-line-2 bg-surface">
+                    {clientMatches.length === 0 ? (
+                      <View className="px-4 py-3"><Text className="text-ink-4" style={{ fontSize: 13.5 }}>No matches.</Text></View>
+                    ) : (
+                      clientMatches.map((c, i) => (
+                        <Pressable key={c.id} onPress={() => { setClient(c); setClientQuery(""); setClientFocused(false); }} accessibilityRole="button"
+                          className={`flex-row items-center px-3 py-2.5 ${i > 0 ? "border-t border-line" : ""}`} style={{ gap: 10, minHeight: 48 }}>
+                          <Avatar name={c.name} size={34} />
+                          <Text numberOfLines={1} className="text-ink" style={{ fontSize: 14.5, fontFamily: "Inter_500Medium" }}>{c.name}</Text>
+                        </Pressable>
+                      ))
+                    )}
+                  </View>
+                ) : null}
+              </View>
+            )}
+          </View>
+        ) : null}
+
+        {/* Service */}
+        <View className="mt-5">
+          <Text className="mb-2 text-ink-4" style={{ fontSize: 12, fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>SERVICE</Text>
+          {loading ? (
+            <Skeleton width={"100%"} height={52} radius={12} />
+          ) : (
+            <>
+              <Pressable onPress={() => setPickSvc((p) => !p)} accessibilityRole="button" accessibilityState={{ expanded: pickSvc }} className="flex-row items-center justify-between rounded-control-lg border border-line-2 bg-surface px-4" style={{ minHeight: 52 }}>
+                {svc ? (
+                  <View className="flex-row items-baseline" style={{ gap: 8 }}>
+                    <Text style={{ fontSize: 15, fontFamily: "Inter_600SemiBold", color: colors.ink }}>{svc.name}</Text>
+                    <Text className="text-ink-3" style={{ fontSize: 12.5 }}>{svc.duration_minutes}m · ${(svc.price_cents / 100).toFixed(0)}</Text>
+                  </View>
+                ) : (
+                  <Text className="text-ink-4" style={{ fontSize: 15 }}>Choose a service</Text>
+                )}
+                <Icon name={pickSvc ? "chevD" : "chevR"} size={16} color={colors.ink4} />
+              </Pressable>
+              {pickSvc ? (
+                <View className="mt-2 overflow-hidden rounded-control-lg border border-line-2 bg-surface">
+                  {services.map((s, i) => {
+                    const on = svc?.id === s.id;
+                    return (
+                      <Pressable key={s.id} onPress={() => { setSvc(s); setPickSvc(false); }} accessibilityRole="button" className={`flex-row items-center justify-between px-4 py-3.5 ${i > 0 ? "border-t border-line" : ""} ${on ? "bg-plum-soft" : ""}`} style={{ minHeight: 44 }}>
+                        <Text style={{ fontSize: 14.5, fontFamily: "Inter_600SemiBold", color: on ? colors.plumInk : colors.ink }}>{s.name}</Text>
+                        <Text className="text-ink-3" style={{ fontSize: 12.5 }}>{s.duration_minutes}m · ${(s.price_cents / 100).toFixed(0)}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
+            </>
+          )}
+        </View>
+
+        {/* Day */}
+        <View className="mt-5">
+          <Text className="mb-2 text-ink-4" style={{ fontSize: 12, fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>DAY</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7 }}>
+            {days.map((d) => {
+              const on = d.key === dayKey;
+              return (
+                <Pressable key={d.key} onPress={() => { setDayKey(d.key); setSlot(null); }} accessibilityRole="button"
+                  className={`items-center justify-center rounded-[15px] border ${on ? "border-ink bg-ink" : "border-line-2 bg-surface"}`} style={{ width: 50, height: 54, gap: 3 }}>
+                  <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: on ? "#fff" : d.isToday ? colors.accent : colors.ink4 }}>{d.dow}</Text>
+                  <Text tabular style={{ fontSize: 17, fontFamily: "Inter_600SemiBold", color: on ? "#fff" : colors.ink2 }}>{d.n}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {/* Available times */}
+        <View className="mt-5">
+          <Text className="mb-2 text-ink-4" style={{ fontSize: 12, fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>
+            AVAILABLE TIMES{svc ? ` · ${svc.duration_minutes}m` : ""}
+          </Text>
+          {!svc ? (
+            <Text className="text-ink-3" style={{ fontSize: 13.5 }}>Pick a service first so times fit around your day.</Text>
+          ) : slotsLoading ? (
+            <View>
+              {["Morning", "Afternoon"].map((label) => (
+                <View key={label} className="mb-3">
+                  <View className="mb-2 rounded bg-bg-warm" style={{ width: 72, height: 12 }} />
+                  <View className="flex-row flex-wrap" style={{ gap: 8 }}>
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <View key={i} className="rounded-control bg-bg-warm" style={{ width: 92, height: 44, opacity: 0.6 }} />
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : slots.length === 0 ? (
+            <Text className="text-ink-3 py-2" style={{ fontSize: 13.5, lineHeight: 19 }}>
+              No openings this day. Try another day above.
+            </Text>
+          ) : (
+            groups
+              .filter(([, gslots]) => gslots.length > 0)
+              .map(([label, gslots]) => (
+                <View key={label} className="mb-3">
+                  <Text className="mb-1.5 text-ink-3" style={{ fontSize: 12.5, fontFamily: "Inter_600SemiBold" }}>{label}</Text>
+                  <View className="flex-row flex-wrap" style={{ gap: 8 }}>
+                    {gslots.map((s) => {
+                      const on = slot?.startHour === s.startHour;
+                      return (
+                        <Pressable key={`${label}-${s.startHour}-${s.label}`} onPress={() => setSlot(s)} accessibilityRole="button" accessibilityState={on ? { selected: true } : {}}
+                          className={`items-center justify-center rounded-control border ${on ? "border-plum-strong bg-plum-strong" : "border-line-2 bg-surface"}`} style={{ minHeight: 44, paddingHorizontal: 14 }}>
+                          <Text style={{ fontSize: 13.5, fontFamily: "Inter_600SemiBold", color: on ? "#fff" : colors.ink }}>{s.label}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              ))
+          )}
+        </View>
+
+        {/* guardrail note (in-flow, calm) */}
+        <Text className="mt-4 text-center text-ink-4" style={{ fontSize: 12, lineHeight: 16 }}>
+          Reviewed by you — created in Square only when you tap Confirm.
+        </Text>
+      </ScrollView>
     </View>
   );
 }
