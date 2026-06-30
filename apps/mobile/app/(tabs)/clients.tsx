@@ -66,6 +66,10 @@ export default function ClientsScreen() {
           className="bg-surface"
           contentContainerStyle={{ paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 12 }}
           keyboardShouldPersistTaps="handled"
+          initialNumToRender={14}
+          maxToRenderPerBatch={12}
+          windowSize={9}
+          removeClippedSubviews
           ListEmptyComponent={<View className="px-gutter py-8"><Text className="text-ink-3" style={{ fontSize: 13.5 }}>No clients found.</Text></View>}
           renderItem={({ item: c }) => (
             <Pressable

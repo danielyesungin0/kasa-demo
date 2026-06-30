@@ -120,6 +120,10 @@ export default function InboxScreen() {
           className="bg-surface"
           contentContainerStyle={{ paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 12 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.ink4} />}
+          initialNumToRender={12}
+          maxToRenderPerBatch={10}
+          windowSize={9}
+          removeClippedSubviews
           renderItem={({ item, index }) => (
             <InboxRow
               item={item}

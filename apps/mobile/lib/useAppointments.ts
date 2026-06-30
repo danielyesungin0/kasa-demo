@@ -4,6 +4,7 @@
 // Day/Week/Month from these rows — never a second hardcoded list (DESIGN.md §7:
 // Today + Calendar share this one source).
 import { useCallback, useEffect, useState } from "react";
+import { getCache, setCache, subscribeCache } from "./cache";
 import { supabase } from "./supabase";
 import { useAuth } from "./auth";
 
@@ -37,10 +38,19 @@ export function hourOf(iso: string): number {
   return h + m / 60;
 }
 
+const CACHE_KEY = "appointments";
+
 export function useAppointments() {
   const { session } = useAuth();
-  const [items, setItems] = useState<Appointment[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Seed from cache synchronously → instant render on revisit, no skeleton.
+  const [items, setItems] = useState<Appointment[]>(() => getCache<Appointment[]>(CACHE_KEY) ?? []);
+  const [loading, setLoading] = useState(() => getCache<Appointment[]>(CACHE_KEY) === undefined);
+
+  // Live-update from other mounted screens that refresh this data.
+  useEffect(() => subscribeCache(CACHE_KEY, () => {
+    const v = getCache<Appointment[]>(CACHE_KEY);
+    if (v) setItems(v);
+  }), []);
 
   const reload = useCallback(async () => {
     if (!session) return; // wait for auth; RLS returns nothing otherwise
@@ -95,6 +105,7 @@ export function useAppointments() {
         (Date.now() - new Date(a.created_at).getTime()) < 24 * 60 * 60 * 1000,
     }));
     setItems(mapped);
+    setCache(CACHE_KEY, mapped); // share with other screens; seed next mount
     setLoading(false);
   }, [session]);
 

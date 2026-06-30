@@ -5,6 +5,7 @@
 // sent/failed against the send-message result — never a fake delivery state).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "./supabase";
+import { getCache, setCache } from "./cache";
 import type {
   ChannelType,
   ClientRow,
@@ -49,12 +50,14 @@ export function useThread(conversationId: string) {
     setMessages([...dbRows, ...stillPending]);
   }, [conversationId]);
 
-  // Reset optimistic state whenever the open conversation changes, so a pending
-  // bubble from a previous thread can never render in this one.
+  // On conversation change: clear optimistic state, then seed messages from the
+  // per-thread cache so reopening a chat shows instantly (no blank/skeleton);
+  // only show the skeleton if we've never loaded this thread.
   useEffect(() => {
     pending.current = [];
-    setMessages([]);
-    setLoading(true);
+    const cached = getCache<MessageRow[]>(`thread:${conversationId}`);
+    setMessages(cached ?? []);
+    setLoading(cached === undefined);
   }, [conversationId]);
 
   const loadMessages = useCallback(async () => {
@@ -68,6 +71,7 @@ export function useThread(conversationId: string) {
       .order("sent_at", { ascending: false })
       .limit(100);
     const rows = ((data ?? []) as MessageRow[]).reverse();
+    setCache(`thread:${conversationId}`, rows); // seed next open
     merge(rows);
   }, [conversationId, merge]);
 

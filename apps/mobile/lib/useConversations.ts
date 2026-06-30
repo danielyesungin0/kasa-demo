@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "./supabase";
 import { useAuth } from "./auth";
+import { getCache, setCache, subscribeCache } from "./cache";
 import type { InboxItem, MessageRow } from "./types";
 
 const SNIPPET_NONE = "";
@@ -64,11 +65,19 @@ async function loadInbox(): Promise<InboxItem[]> {
   });
 }
 
+const CACHE_KEY = "conversations";
+
 export function useConversations() {
   const { session } = useAuth();
-  const [items, setItems] = useState<InboxItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Seed from cache → instant inbox on revisit (Today + Inbox share this).
+  const [items, setItems] = useState<InboxItem[]>(() => getCache<InboxItem[]>(CACHE_KEY) ?? []);
+  const [loading, setLoading] = useState(() => getCache<InboxItem[]>(CACHE_KEY) === undefined);
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => subscribeCache(CACHE_KEY, () => {
+    const v = getCache<InboxItem[]>(CACHE_KEY);
+    if (v) setItems(v);
+  }), []);
 
   const reload = useCallback(async () => {
     // Without a session, RLS returns nothing — don't overwrite with an empty
@@ -77,6 +86,7 @@ export function useConversations() {
     if (!session) return;
     const next = await loadInbox();
     setItems(next);
+    setCache(CACHE_KEY, next);
     setLoading(false);
   }, [session]);
 

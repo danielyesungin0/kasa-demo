@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "./supabase";
 import { useAuth } from "./auth";
+import { getCache, setCache, subscribeCache } from "./cache";
 import type { ChannelType } from "./types";
 
 export type ClientRow = {
@@ -35,10 +36,17 @@ export type ClientAppt = {
   service_name: string | null;
 };
 
+const CLIENTS_CACHE = "clients";
+
 export function useClients() {
   const { session } = useAuth();
-  const [items, setItems] = useState<ClientRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState<ClientRow[]>(() => getCache<ClientRow[]>(CLIENTS_CACHE) ?? []);
+  const [loading, setLoading] = useState(() => getCache<ClientRow[]>(CLIENTS_CACHE) === undefined);
+
+  useEffect(() => subscribeCache(CLIENTS_CACHE, () => {
+    const v = getCache<ClientRow[]>(CLIENTS_CACHE);
+    if (v) setItems(v);
+  }), []);
 
   const reload = useCallback(async () => {
     if (!session) return; // wait for auth; RLS returns nothing otherwise
@@ -46,7 +54,9 @@ export function useClients() {
       .from("clients")
       .select("id, name, value, since, visits, last_appt_at, preferences, notes, tags, phone, email, instagram_handle")
       .order("name", { ascending: true });
-    setItems((data ?? []) as ClientRow[]);
+    const rows = (data ?? []) as ClientRow[];
+    setItems(rows);
+    setCache(CLIENTS_CACHE, rows);
     setLoading(false);
   }, [session]);
 
