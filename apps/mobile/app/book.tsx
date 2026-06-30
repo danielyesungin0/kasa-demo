@@ -6,8 +6,9 @@ import { Icon } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
 import { Avatar } from "@/components/ui/Avatar";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { SearchBar } from "@/components/ui/SearchBar";
 import { useAppointments } from "@/lib/useAppointments";
-import { listServices, fetchAllSlots, availableSlots, createBooking, type Service, type Slot } from "@/lib/booking";
+import { listServices, fetchAllSlots, availableSlots, createBooking, cancelBooking, type Service, type Slot } from "@/lib/booking";
 import { dayStrip, weekStart, todayKey } from "@/lib/calendar";
 import { supabase } from "@/lib/supabase";
 import { colors } from "@/theme/colors";
@@ -22,7 +23,7 @@ type Client = { id: string; name: string; phone: string | null };
 export default function BookScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const params = useLocalSearchParams<{ day?: string; conversation?: string; client?: string }>();
+  const params = useLocalSearchParams<{ day?: string; conversation?: string; client?: string; service?: string; reschedule?: string }>();
   const { items: appts } = useAppointments();
 
   const [services, setServices] = useState<Service[]>([]);
@@ -85,9 +86,15 @@ export default function BookScreen() {
         const c = (cl ?? []).find((x: any) => x.id === params.client) as Client | undefined;
         if (c) { setClient(c); setFixedClient(true); }
       }
+      // Reschedule (or any caller passing ?service=id): preselect that exact
+      // service so the stylist usually only changes the time.
+      if (params.service) {
+        const match = svcs.find((s) => s.id === params.service);
+        if (match) setSvc(match);
+      }
       setLoading(false);
     })();
-  }, [params.conversation, params.client]);
+  }, [params.conversation, params.client, params.service]);
 
   const [slotsByDay, setSlotsByDay] = useState<Record<string, Slot[]>>({});
   const [slotsLoading, setSlotsLoading] = useState(false);
@@ -130,6 +137,11 @@ export default function BookScreen() {
       startHour: slot.startHour,
       originConversationId: originConvo,
     });
+    // Reschedule: the NEW booking succeeded, so now cancel the OLD one. (Doing
+    // it in this order means backing out earlier never lost the original.)
+    if (res.ok && params.reschedule) {
+      await cancelBooking(params.reschedule); // best-effort; new one is confirmed
+    }
     setSubmitting(false);
     setResult(res.ok ? { ok: true } : { ok: false, error: res.error });
   }
@@ -189,7 +201,7 @@ export default function BookScreen() {
         <Pressable onPress={() => router.back()} accessibilityRole="button" hitSlop={8} style={{ minWidth: 60 }}>
           <Text className="text-ink-3" style={{ fontSize: 16 }}>Cancel</Text>
         </Pressable>
-        <Text style={{ fontSize: 16, fontFamily: "Inter_600SemiBold", color: colors.ink }}>New appointment</Text>
+        <Text style={{ fontSize: 16, fontFamily: "Inter_600SemiBold", color: colors.ink }}>{params.reschedule ? "Reschedule" : "New appointment"}</Text>
         <Pressable onPress={confirm} disabled={!ready || submitting} accessibilityRole="button" hitSlop={8} style={{ minWidth: 60, alignItems: "flex-end" }}>
           {submitting ? (
             <ActivityIndicator size="small" color={colors.plumStrong} />
@@ -214,22 +226,12 @@ export default function BookScreen() {
               </Pressable>
             ) : (
               <View>
-                <View className="flex-row items-center rounded-control-lg border border-line-2 bg-surface px-3.5" style={{ height: 48, gap: 8 }}>
-                  <Icon name="search" size={16} color={colors.ink4} />
-                  <TextInput
-                    value={clientQuery}
-                    onChangeText={setClientQuery}
-                    onFocus={() => setClientFocused(true)}
-                    placeholder="Search clients"
-                    placeholderTextColor={colors.ink4}
-                    autoCapitalize="none"
-                    className="flex-1 text-body text-ink"
-                    style={{ fontFamily: "Inter_400Regular", padding: 0 }}
-                  />
-                  {clientQuery ? (
-                    <Pressable onPress={() => setClientQuery("")} hitSlop={8} accessibilityLabel="Clear"><Icon name="x" size={15} color={colors.ink4} /></Pressable>
-                  ) : null}
-                </View>
+                <SearchBar
+                  value={clientQuery}
+                  onChangeText={setClientQuery}
+                  onFocus={() => setClientFocused(true)}
+                  placeholder="Search clients"
+                />
                 {(clientFocused || clientQuery) ? (
                   <View className="mt-2 overflow-hidden rounded-control-lg border border-line-2 bg-surface">
                     {clientMatches.length === 0 ? (

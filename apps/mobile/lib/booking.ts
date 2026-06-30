@@ -67,7 +67,12 @@ export async function fetchSlots(
     const all: any[] = json.slots ?? [];
     return all
       .filter((s) => s.dateKey === dayKey)
-      .map((s) => ({ startHour: s.hour24 + (Number(s.isoTime?.split(":")[1] ?? 0) / 60), label: s.timeLabel }));
+      .map((s) => {
+        // startHour from "HH:MM" (don't add minutes to hour24 — it's already
+        // fractional, so adding the :30 again booked the wrong time).
+        const [h, m] = String(s.isoTime ?? "").split(":").map(Number);
+        return { startHour: (h || 0) + (m || 0) / 60, label: s.timeLabel };
+      });
   } catch {
     // Honest fallback to the local engine (never leave the user with nothing).
     return availableSlots(dayKey, service.duration_minutes, appts);
@@ -100,7 +105,11 @@ export async function fetchAllSlots(service: Service): Promise<Record<string, Sl
     const byDay: Record<string, Slot[]> = {};
     const seen: Record<string, Set<number>> = {}; // dedupe per day by startHour
     for (const s of all) {
-      const startHour = s.hour24 + (Number(s.isoTime?.split(":")[1] ?? 0) / 60);
+      // startHour from the authoritative "HH:MM" isoTime. (Don't add minutes to
+      // hour24 — hour24 already includes the fraction, e.g. 10.5 for 10:30, so
+      // adding the :30 again produced 11.0 → booked the wrong time.)
+      const [h, m] = String(s.isoTime ?? "").split(":").map(Number);
+      const startHour = (h || 0) + (m || 0) / 60;
       (seen[s.dateKey] ??= new Set());
       if (seen[s.dateKey].has(startHour)) continue; // Square can return dup starts
       seen[s.dateKey].add(startHour);

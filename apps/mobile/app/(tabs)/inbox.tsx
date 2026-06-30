@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import { View, FlatList, Pressable, TextInput, ActivityIndicator, RefreshControl } from "react-native";
+import { View, FlatList, Pressable, RefreshControl } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Icon } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { SearchBar } from "@/components/ui/SearchBar";
 import { InboxRow } from "@/components/inbox/InboxRow";
 import { useConversations } from "@/lib/useConversations";
 import { supabase } from "@/lib/supabase";
@@ -65,25 +66,8 @@ export default function InboxScreen() {
         </View>
 
         {/* search — filters by client name or message text */}
-        <View
-          className="mb-3 flex-row items-center rounded-control bg-surface px-3.5"
-          style={{ gap: 9, paddingVertical: 11 }}
-        >
-          <Icon name="search" size={16} color={colors.ink4} />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Search messages"
-            placeholderTextColor={colors.ink4}
-            autoCapitalize="none"
-            className="flex-1 text-body text-ink"
-            style={{ fontFamily: "Inter_400Regular", padding: 0 }}
-          />
-          {query ? (
-            <Pressable onPress={() => setQuery("")} hitSlop={8} accessibilityRole="button" accessibilityLabel="Clear search">
-              <Icon name="x" size={16} color={colors.ink4} />
-            </Pressable>
-          ) : null}
+        <View className="mb-3">
+          <SearchBar value={query} onChangeText={setQuery} placeholder="Search messages" />
         </View>
 
         {/* filter chips */}

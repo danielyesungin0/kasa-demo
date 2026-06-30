@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Pressable, ScrollView, ActivityIndicator, ActionSheetIOS, Alert } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { View, Pressable, ScrollView, ActivityIndicator, Alert, Animated } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { Icon } from "@/components/ui/Icon";
 import { Text } from "@/components/ui/Text";
+import { ActionSheet } from "@/components/ui/ActionSheet";
 import { DayGrid } from "@/components/calendar/DayGrid";
 import { WeekGrid } from "@/components/calendar/WeekGrid";
 import { MonthGrid } from "@/components/calendar/MonthGrid";
@@ -53,22 +54,9 @@ export default function CalendarScreen() {
     : view === "week" ? (weeks.find((w) => w.startKey === weekKey)?.label ?? "")
     : monthLabel(monthIdx, year);
 
-  function openAppt(a: Appointment) {
-    // Tap an appointment → action sheet: View client / Reschedule / Cancel.
-    ActionSheetIOS.showActionSheetWithOptions(
-      {
-        title: `${a.clientName} · ${a.serviceName ?? "Appointment"}`,
-        options: ["View client", "Reschedule", "Cancel appointment", "Close"],
-        destructiveButtonIndex: 2,
-        cancelButtonIndex: 3,
-      },
-      (idx) => {
-        if (idx === 0 && a.client_id) router.push(`/client/${a.client_id}`);
-        else if (idx === 1) rescheduleAppt(a);
-        else if (idx === 2) confirmCancel(a);
-      },
-    );
-  }
+  // Tap an appointment → our own ActionSheet (View / Reschedule / Cancel).
+  const [sheetAppt, setSheetAppt] = useState<Appointment | null>(null);
+  function openAppt(a: Appointment) { setSheetAppt(a); }
 
   function confirmCancel(a: Appointment) {
     Alert.alert(
@@ -88,13 +76,18 @@ export default function CalendarScreen() {
     );
   }
 
-  // Reschedule = cancel-then-rebook (Square has no in-place reschedule for this
-  // flow; this keeps Square the source of truth). Opens Book prefilled.
-  async function rescheduleAppt(a: Appointment) {
-    const res = await cancelBooking(a.id);
-    if (!res.ok) { Alert.alert("Couldn't reschedule", res.error ?? "Try again."); return; }
-    reload();
-    if (a.client_id) router.push(`/book?client=${a.client_id}&day=${dayKey}`);
+  // Reschedule: open Book prefilled with the SAME client + service + day, in
+  // reschedule mode. Book cancels the old booking only AFTER the new one
+  // succeeds — so backing out never loses the original appointment. Instant:
+  // no awaiting a cancel here.
+  function rescheduleAppt(a: Appointment) {
+    if (!a.client_id) { Alert.alert("Can't reschedule", "This appointment has no client on file."); return; }
+    const day = a.starts_at.slice(0, 10);
+    const url =
+      `/book?client=${a.client_id}&day=${day}` +
+      (a.service_id ? `&service=${a.service_id}` : "") +
+      `&reschedule=${a.id}`;
+    router.push(url as any);
   }
 
   // Swipe left/right to move between days (Day view) or weeks (Week view).
@@ -103,12 +96,24 @@ export default function CalendarScreen() {
     else if (view === "week") setWeekKey((k) => addDaysKey(k, dir * 7));
     else setMonthIdx((m) => Math.min(11, Math.max(0, m + dir)));
   }
+
+  // Slide animation when navigating: grid slides out in the swipe direction,
+  // content swaps, then slides in from the other side. Light + native-driven.
+  const slideX = useRef(new Animated.Value(0)).current;
+  function animatedNavigate(dir: -1 | 1) {
+    const W = 380;
+    Animated.timing(slideX, { toValue: -dir * W * 0.25, duration: 110, useNativeDriver: true }).start(() => {
+      navigate(dir);
+      slideX.setValue(dir * W * 0.25);
+      Animated.timing(slideX, { toValue: 0, duration: 160, useNativeDriver: true }).start();
+    });
+  }
   const swipe = Gesture.Pan()
     .activeOffsetX([-20, 20]) // horizontal intent only; lets vertical scroll win
     .failOffsetY([-12, 12])
     .onEnd((e) => {
-      if (e.translationX <= -50) runOnJS(navigate)(1);
-      else if (e.translationX >= 50) runOnJS(navigate)(-1);
+      if (e.translationX <= -50) runOnJS(animatedNavigate)(1);
+      else if (e.translationX >= 50) runOnJS(animatedNavigate)(-1);
     });
 
   return (
@@ -184,9 +189,11 @@ export default function CalendarScreen() {
       ) : (
         <GestureDetector gesture={swipe}>
           <ScrollView className="flex-1 bg-surface" contentContainerStyle={{ paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 16 }} showsVerticalScrollIndicator={false}>
-            {view === "day" && <DayGrid dayKey={dayKey} appts={items} onOpen={openAppt} />}
-            {view === "week" && <WeekGrid weekStartKey={weekKey} appts={items} onPickDay={(k) => { setDayKey(k); setView("day"); }} onOpen={openAppt} />}
-            {view === "month" && <MonthGrid year={year} monthIdx={monthIdx} appts={items} onPickDay={(k) => { setDayKey(k); setView("day"); }} />}
+            <Animated.View style={{ transform: [{ translateX: slideX }] }}>
+              {view === "day" && <DayGrid dayKey={dayKey} appts={items} onOpen={openAppt} />}
+              {view === "week" && <WeekGrid weekStartKey={weekKey} appts={items} onPickDay={(k) => { setDayKey(k); setView("day"); }} onOpen={openAppt} />}
+              {view === "month" && <MonthGrid year={year} monthIdx={monthIdx} appts={items} onPickDay={(k) => { setDayKey(k); setView("day"); }} />}
+            </Animated.View>
           </ScrollView>
         </GestureDetector>
       )}
@@ -201,6 +208,22 @@ export default function CalendarScreen() {
       >
         <Icon name="plus" size={26} color="#fff" />
       </Pressable>
+
+      <ActionSheet
+        visible={!!sheetAppt}
+        title={sheetAppt ? sheetAppt.clientName : undefined}
+        subtitle={sheetAppt ? sheetAppt.serviceName ?? "Appointment" : undefined}
+        onClose={() => setSheetAppt(null)}
+        actions={
+          sheetAppt
+            ? [
+                { label: "View client", icon: "user", onPress: () => sheetAppt.client_id && router.push(`/client/${sheetAppt.client_id}`) },
+                { label: "Reschedule", icon: "clock", onPress: () => rescheduleAppt(sheetAppt) },
+                { label: "Cancel appointment", icon: "x", destructive: true, onPress: () => confirmCancel(sheetAppt) },
+              ]
+            : []
+        }
+      />
     </View>
   );
 }

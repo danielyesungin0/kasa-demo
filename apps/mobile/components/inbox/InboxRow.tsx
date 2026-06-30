@@ -80,10 +80,13 @@ export function InboxRow({
         className="flex-row items-center bg-surface active:bg-surface-2"
         style={{ paddingVertical: 14, paddingLeft: 20, paddingRight: 18, gap: 12, minHeight: 72 }}
       >
-        {/* unread dot — overlaid in the left gutter so the avatar starts flush at
-            the 20px gutter (aligned with the header title + filter pills). */}
+        {/* unread dot — overlaid in the left gutter, vertically centered against
+            the full row height (a top:0/bottom:0 column centers it reliably,
+            regardless of the row's vertical padding). */}
         {unread ? (
-          <View style={{ position: "absolute", left: 7, top: "50%", marginTop: -4, width: 8, height: 8, borderRadius: 4, backgroundColor: colors.accent }} />
+          <View style={{ position: "absolute", left: 6, top: 0, bottom: 0, width: 8, alignItems: "center", justifyContent: "center" }}>
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.accent }} />
+          </View>
         ) : null}
 
         {/* avatar + channel dot bottom-right */}
