@@ -288,15 +288,28 @@ export default function BookScreen() {
           )}
         </View>
 
-        {/* Day */}
+        {/* Day — once slots load, days with no availability are dimmed (and not
+            selectable) so it's clear which days the stylist actually works. */}
         <View className="mt-5">
           <Text className="mb-2 text-ink-4" style={{ fontSize: 12, fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>DAY</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7 }}>
             {days.map((d) => {
               const on = d.key === dayKey;
+              // "unavailable" only once we have loaded slot data for the service
+              // (don't dim before we know). A day with a loaded-but-empty list
+              // (or missing from the map after a load) has no openings.
+              const slotsLoaded = svc && !slotsLoading && Object.keys(slotsByDay).length > 0;
+              const unavailable = !!slotsLoaded && (slotsByDay[d.key]?.length ?? 0) === 0;
               return (
-                <Pressable key={d.key} onPress={() => { setDayKey(d.key); setSlot(null); }} accessibilityRole="button"
-                  className={`items-center justify-center rounded-[15px] border ${on ? "border-ink bg-ink" : "border-line-2 bg-surface"}`} style={{ width: 50, height: 54, gap: 3 }}>
+                <Pressable
+                  key={d.key}
+                  onPress={() => { if (!unavailable) { setDayKey(d.key); setSlot(null); } }}
+                  disabled={unavailable}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: unavailable, selected: on }}
+                  className={`items-center justify-center rounded-[15px] border ${on ? "border-ink bg-ink" : "border-line-2 bg-surface"}`}
+                  style={{ width: 50, height: 54, gap: 3, opacity: unavailable ? 0.34 : 1 }}
+                >
                   <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: on ? "#fff" : d.isToday ? colors.accent : colors.ink4 }}>{d.dow}</Text>
                   <Text tabular style={{ fontSize: 17, fontFamily: "Inter_600SemiBold", color: on ? "#fff" : colors.ink2 }}>{d.n}</Text>
                 </Pressable>
