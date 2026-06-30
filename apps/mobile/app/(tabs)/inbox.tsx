@@ -7,7 +7,7 @@ import { Text } from "@/components/ui/Text";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { SearchBar } from "@/components/ui/SearchBar";
 import { InboxRow } from "@/components/inbox/InboxRow";
-import { ActionSheet, type SheetAction } from "@/components/ui/ActionSheet";
+import { FilterSheet, type StatusKey, type ChannelKey } from "@/components/inbox/FilterSheet";
 import { useConversations } from "@/lib/useConversations";
 import { supabase } from "@/lib/supabase";
 import { colors, channels } from "@/theme/colors";
@@ -16,25 +16,15 @@ import type { InboxItem } from "@/lib/types";
 const channelLabel = (c: InboxItem["channel_type"]) =>
   channels[c as keyof typeof channels]?.label ?? c;
 
-const FILTERS = [
-  { key: "all", label: "All" },
-  { key: "unread", label: "Unread" },
-  // "Booking requests" = threads the AI flagged as a booking inquiry (the
-  // hasBooking / intent==="booking" signal). Renamed from "Booked", which read
-  // like "has a confirmed appointment" — this is a lead, not a confirmation.
-  { key: "booking", label: "Booking requests" },
-] as const;
-type FilterKey = (typeof FILTERS)[number]["key"];
-
 const TAB_BAR_HEIGHT = 60;
 
 export default function InboxScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { items, loading, reload } = useConversations();
-  const [filter, setFilter] = useState<FilterKey>("all");
-  const [channel, setChannel] = useState<"all" | InboxItem["channel_type"]>("all");
-  const [channelMenu, setChannelMenu] = useState(false);
+  const [status, setStatus] = useState<StatusKey>("all");
+  const [channel, setChannel] = useState<ChannelKey>("all");
+  const [filterOpen, setFilterOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   async function onRefresh() { setRefreshing(true); await reload(); setRefreshing(false); }
@@ -44,11 +34,12 @@ export default function InboxScreen() {
     () => Array.from(new Set(items.map((i) => i.channel_type))),
     [items],
   );
+  const activeCount = (status !== "all" ? 1 : 0) + (channel !== "all" ? 1 : 0);
 
   const list = useMemo(() => {
     let l = items;
-    if (filter === "unread") l = l.filter((i) => i.unread);
-    else if (filter === "booking") l = l.filter((i) => i.hasBooking);
+    if (status === "unread") l = l.filter((i) => i.unread);
+    else if (status === "booking") l = l.filter((i) => i.hasBooking);
     if (channel !== "all") l = l.filter((i) => i.channel_type === channel);
     const q = query.trim().toLowerCase();
     if (q) {
@@ -59,7 +50,7 @@ export default function InboxScreen() {
       );
     }
     return l;
-  }, [items, filter, channel, query]);
+  }, [items, status, channel, query]);
 
   async function markRead(item: InboxItem) {
     await supabase.from("conversations").update({ unread: false }).eq("id", item.id);
@@ -79,53 +70,50 @@ export default function InboxScreen() {
       <View className="px-gutter pb-2.5 pt-3">
         <View className="mb-3 flex-row items-center justify-between" style={{ minHeight: 40 }}>
           <Text variant="title">Inbox</Text>
-          {/* channel filter — only shown once there's more than one channel to
-              filter by (e.g. after WeChat connects). With one channel it'd be a
-              no-op control, so we hide it until it's useful. */}
-          {presentChannels.length > 1 ? (
-            <Pressable
-              onPress={() => setChannelMenu(true)}
-              accessibilityRole="button"
-              accessibilityLabel="Filter by channel"
-              className={`flex-row items-center rounded-pill border px-3 ${channel !== "all" ? "border-ink bg-ink" : "border-line-2 bg-surface"}`}
-              style={{ minHeight: 36, gap: 6 }}
-            >
-              <Icon name="merge" size={14} color={channel !== "all" ? "#fff" : colors.ink3} />
-              <Text style={{ fontSize: 13, fontFamily: "Inter_600SemiBold", color: channel !== "all" ? "#fff" : colors.ink2 }}>
-                {channel === "all" ? "Filter" : channelLabel(channel)}
-              </Text>
-            </Pressable>
-          ) : null}
+          {/* one Filters button → opens the Filters bottom sheet (Instagram
+              pattern). Badge shows how many filters are active. */}
+          <Pressable
+            onPress={() => setFilterOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Filters"
+            className={`flex-row items-center rounded-pill border px-3.5 ${activeCount > 0 ? "border-ink bg-ink" : "border-line-2 bg-surface"}`}
+            style={{ minHeight: 36, gap: 7 }}
+          >
+            <Icon name="merge" size={15} color={activeCount > 0 ? "#fff" : colors.ink2} />
+            <Text style={{ fontSize: 13.5, fontFamily: "Inter_600SemiBold", color: activeCount > 0 ? "#fff" : colors.ink2 }}>
+              Filters
+            </Text>
+            {activeCount > 0 ? (
+              <View className="items-center justify-center rounded-full bg-white" style={{ minWidth: 18, height: 18, paddingHorizontal: 4 }}>
+                <Text tabular style={{ fontSize: 11, fontFamily: "Inter_700Bold", color: colors.ink }}>{activeCount}</Text>
+              </View>
+            ) : null}
+          </Pressable>
         </View>
 
         {/* search — filters by client name or message text */}
-        <View className="mb-3">
-          <SearchBar value={query} onChangeText={setQuery} placeholder="Search messages" />
-        </View>
+        <SearchBar value={query} onChangeText={setQuery} placeholder="Search messages" />
 
-        {/* filter chips */}
-        <View className="flex-row" style={{ gap: 8 }}>
-          {FILTERS.map((f) => {
-            const on = filter === f.key;
-            return (
-              <Pressable
-                key={f.key}
-                onPress={() => setFilter(f.key)}
-                accessibilityRole="button"
-                accessibilityState={on ? { selected: true } : {}}
-                className={`rounded-pill border px-4 ${on ? "border-ink bg-ink" : "border-line-2 bg-surface"}`}
-                style={{ paddingVertical: 8, minHeight: 36 }}
-              >
-                <Text
-                  className={on ? "text-white" : "text-ink-2"}
-                  style={{ fontSize: 13.5, fontFamily: "Inter_500Medium" }}
-                >
-                  {f.label}
+        {/* active-filter chips — show what's applied (controls live in the sheet);
+            each chip is tappable to clear that one. */}
+        {activeCount > 0 ? (
+          <View className="mt-3 flex-row" style={{ gap: 8 }}>
+            {status !== "all" ? (
+              <Pressable onPress={() => setStatus("all")} accessibilityRole="button" className="flex-row items-center rounded-pill bg-ink px-3" style={{ minHeight: 32, gap: 6 }}>
+                <Text className="text-white" style={{ fontSize: 12.5, fontFamily: "Inter_600SemiBold" }}>
+                  {status === "unread" ? "Unread" : "Booking requests"}
                 </Text>
+                <Icon name="x" size={12} color="#fff" />
               </Pressable>
-            );
-          })}
-        </View>
+            ) : null}
+            {channel !== "all" ? (
+              <Pressable onPress={() => setChannel("all")} accessibilityRole="button" className="flex-row items-center rounded-pill bg-ink px-3" style={{ minHeight: 32, gap: 6 }}>
+                <Text className="text-white" style={{ fontSize: 12.5, fontFamily: "Inter_600SemiBold" }}>{channelLabel(channel)}</Text>
+                <Icon name="x" size={12} color="#fff" />
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
       </View>
 
       {/* list (virtualized) */}
@@ -169,18 +157,15 @@ export default function InboxScreen() {
         />
       )}
 
-      <ActionSheet
-        visible={channelMenu}
-        title="Filter by channel"
-        onClose={() => setChannelMenu(false)}
-        actions={[
-          { label: "All channels", icon: "inbox", onPress: () => setChannel("all") },
-          ...presentChannels.map((c): SheetAction => ({
-            label: channelLabel(c),
-            icon: "merge",
-            onPress: () => setChannel(c),
-          })),
-        ]}
+      <FilterSheet
+        visible={filterOpen}
+        status={status}
+        channel={channel}
+        presentChannels={presentChannels}
+        onStatus={setStatus}
+        onChannel={setChannel}
+        onReset={() => { setStatus("all"); setChannel("all"); }}
+        onClose={() => setFilterOpen(false)}
       />
     </View>
   );
