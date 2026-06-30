@@ -19,17 +19,13 @@ const baseConfig: ExpoConfig = {
   ios: {
     supportsTablet: false,
     bundleIdentifier: "com.danielyesung.kasa",
-    infoPlist: {
-      NSMicrophoneUsageDescription: "Kasa needs access to your microphone so you can send voice messages to clients.",
-    },
   },
   android: { package: "com.danielyesung.kasa" },
   web: { bundler: "metro", output: "single" },
   plugins: [
     "expo-router",
     "expo-font",
-    "expo-video",
-    "expo-audio",
+    "expo-video", // still needed to RENDER videos clients send us (inbound)
     [
       "expo-image-picker",
       {

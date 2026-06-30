@@ -24,7 +24,6 @@ import { useThread, type ThreadMessage } from "@/lib/useThread";
 import { takePendingBooking } from "@/lib/bookingResult";
 import { uploadMedia } from "@/lib/uploadMedia";
 import { useToast } from "@/components/ui/Toast";
-import { VoiceRecorder } from "@/components/thread/VoiceRecorder";
 import { channelState } from "@/lib/channelState";
 import { sendMessage } from "@/lib/sendMessage";
 import { channels } from "@/theme/colors";
@@ -38,7 +37,6 @@ export default function ThreadScreen() {
   const listRef = useRef<FlatList>(null);
   const [viewerUrl, setViewerUrl] = useState<string | null>(null);
   const [seededDraft, setSeededDraft] = useState<string | null>(null);
-  const [recording, setRecording] = useState(false);
   // Measure the real header height so KeyboardAvoidingView's offset is exact
   // (a hardcoded guess left a gap between the keyboard and the input).
 
@@ -86,19 +84,19 @@ export default function ThreadScreen() {
     }
   }
 
-  // Send a picked/recorded media file: show it instantly (local uri), upload to
-  // Storage, then send the public URL. On failure, mark the bubble failed AND
-  // surface an honest reason (so a silent "failed" isn't a mystery).
-  async function sendMedia(localUri: string, type: "image" | "video" | "audio") {
-    const tempId = appendOptimistic("", { type, url: localUri });
+  // Send a picked photo: show it instantly (local uri), upload to Storage, then
+  // send the public URL. On failure, mark the bubble failed AND surface an
+  // honest reason. (Photos only for now — video/voice are a later feature.)
+  async function sendPhoto(localUri: string) {
+    const tempId = appendOptimistic("", { type: "image", url: localUri });
     scrollToEnd();
-    const url = await uploadMedia(localUri, type);
+    const url = await uploadMedia(localUri, "image");
     if (!url) {
       reconcile(tempId, "failed");
       toast.show("Upload failed — check your connection", { icon: "alert", tone: "info" });
       return;
     }
-    const result = await sendMessage(id, "", { type, url });
+    const result = await sendMessage(id, "", { type: "image", url });
     if (result.ok) { reconcile(tempId, "sent"); return; }
     if (result.blocked) {
       dropOptimistic(tempId);
@@ -107,18 +105,11 @@ export default function ThreadScreen() {
       return;
     }
     reconcile(tempId, "failed");
-    // Instagram rejects some media (esp. voice/long video) even in an open
-    // window — tell the stylist honestly instead of a silent fail.
-    const why =
-      type === "audio" ? "Instagram didn't accept this voice message"
-      : type === "video" ? "Instagram didn't accept this video"
-      : "Instagram didn't accept this photo";
-    toast.show(why, { icon: "alert", tone: "info" });
+    toast.show("Instagram didn't accept this photo", { icon: "alert", tone: "info" });
   }
 
-  // Composer media actions: camera, photo library, voice memo.
-  async function handleAttach(kind: "camera" | "photo" | "voice") {
-    if (kind === "voice") { setRecording(true); return; }
+  // Composer media actions: camera or photo library (images only for now).
+  async function handleAttach(kind: "camera" | "photo") {
     const fromCamera = kind === "camera";
     const perm = fromCamera
       ? await ImagePicker.requestCameraPermissionsAsync()
@@ -128,12 +119,10 @@ export default function ThreadScreen() {
       return;
     }
     const result = fromCamera
-      ? await ImagePicker.launchCameraAsync({ mediaTypes: ["images", "videos"], quality: 0.8 })
-      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images", "videos"], quality: 0.8 });
+      ? await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.8 })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.8 });
     if (result.canceled || !result.assets?.length) return;
-    const asset = result.assets[0];
-    const type: "image" | "video" = asset.type === "video" ? "video" : "image";
-    void sendMedia(asset.uri, type);
+    void sendPhoto(result.assets[0].uri);
   }
 
   function retry(msg: ThreadMessage) {
@@ -271,11 +260,6 @@ export default function ThreadScreen() {
         />
       </View>
       <ImageViewer url={viewerUrl} onClose={() => setViewerUrl(null)} />
-      <VoiceRecorder
-        visible={recording}
-        onCancel={() => setRecording(false)}
-        onSend={(uri) => { setRecording(false); void sendMedia(uri, "audio"); }}
-      />
     </KeyboardAvoidingView>
   );
 }

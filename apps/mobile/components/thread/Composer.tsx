@@ -26,7 +26,7 @@ export function Composer({
   onSend: (text: string) => void;
   onBook: () => void;
   onOpenExternal: () => void;
-  onAttach?: (kind: "camera" | "photo" | "voice") => void;
+  onAttach?: (kind: "camera" | "photo") => void;
   initialDraft?: string | null;
 }) {
   const insets = useSafeAreaInsets();
@@ -107,14 +107,11 @@ export function Composer({
               // shared not-yet-available handler for now; the layout + behavior
               // (collapse on typing) is the deliverable.
               <View className="flex-row items-center" style={{ gap: 2 }}>
-                <Pressable onPress={() => onAttach?.("camera")} accessibilityRole="button" accessibilityLabel="Camera" className="items-center justify-center" style={{ width: 36, height: 40 }}>
+                <Pressable onPress={() => onAttach?.("camera")} accessibilityRole="button" accessibilityLabel="Camera" className="items-center justify-center" style={{ width: 38, height: 40 }}>
                   <Icon name="camera" size={21} color={colors.ink3} />
                 </Pressable>
-                <Pressable onPress={() => onAttach?.("photo")} accessibilityRole="button" accessibilityLabel="Photo" className="items-center justify-center" style={{ width: 36, height: 40 }}>
+                <Pressable onPress={() => onAttach?.("photo")} accessibilityRole="button" accessibilityLabel="Photo" className="items-center justify-center" style={{ width: 38, height: 40 }}>
                   <Icon name="image" size={21} color={colors.ink3} />
-                </Pressable>
-                <Pressable onPress={() => onAttach?.("voice")} accessibilityRole="button" accessibilityLabel="Voice message" className="items-center justify-center" style={{ width: 36, height: 40 }}>
-                  <Icon name="mic" size={21} color={colors.ink3} />
                 </Pressable>
               </View>
             )}
