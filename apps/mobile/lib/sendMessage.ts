@@ -12,9 +12,12 @@ export type SendResult =
   | { ok: false; blocked: true; channel?: string }
   | { ok: false; blocked?: false; error: string };
 
+export type OutboundMedia = { type: "image" | "video" | "audio"; url: string };
+
 export async function sendMessage(
   conversationId: string,
   text: string,
+  media?: OutboundMedia | null,
 ): Promise<SendResult> {
   try {
     // TODO(auth): send-message has verify_jwt=true. There is no sign-in screen
@@ -33,7 +36,7 @@ export async function sendMessage(
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ conversation_id: conversationId, text }),
+      body: JSON.stringify({ conversation_id: conversationId, text, media: media ?? null }),
     });
 
     const data = await res.json().catch(() => ({}));

@@ -32,11 +32,19 @@ export function useThread(conversationId: string) {
     // bubble + the real DB row both show (the duplicate flicker). Match an
     // optimistic 'out' row to a db 'out' row with the same body to drop it.
     const dbOut = dbRows.filter((r) => r.direction === "out");
-    const stillPending = pending.current.filter(
-      (m) =>
-        m.conversation_id === conversationId &&
-        !dbOut.some((r) => (r.body ?? "") === (m.body ?? "")),
-    );
+    const hasMedia = (m: { media?: unknown }) => Array.isArray(m.media) && m.media.length > 0;
+    const stillPending = pending.current.filter((m) => {
+      if (m.conversation_id !== conversationId) return false;
+      // An optimistic bubble is "echoed" (drop it) when a db out-row matches by
+      // body (when there's text), or — for a media-only bubble — when a db
+      // out-row with media exists (body empty on both).
+      const echoed = dbOut.some((r) =>
+        m.body
+          ? (r.body ?? "") === m.body
+          : hasMedia(m) && hasMedia(r) && !(r.body ?? ""),
+      );
+      return !echoed;
+    });
     pending.current = stillPending;
     setMessages([...dbRows, ...stillPending]);
   }, [conversationId]);
@@ -107,25 +115,30 @@ export function useThread(conversationId: string) {
     };
   }, [conversationId, loadMessages]);
 
-  /** Add an optimistic outgoing bubble immediately; returns its temp id. */
-  const appendOptimistic = useCallback((body: string): string => {
-    const tempId = `temp-${Date.now()}`;
-    const msg: ThreadMessage = {
-      id: tempId,
-      _tempId: tempId,
-      conversation_id: conversationId,
-      direction: "out",
-      body,
-      media: null,
-      channel_message_id: null,
-      status: "sent",
-      sent_at: new Date().toISOString(),
-      _local: "sending",
-    };
-    pending.current = [...pending.current, msg];
-    setMessages((m) => [...m, msg]);
-    return tempId;
-  }, [conversationId]);
+  /** Add an optimistic outgoing bubble immediately; returns its temp id.
+   *  Optional localMedia shows the picked image/video instantly (local uri)
+   *  while it uploads + sends. */
+  const appendOptimistic = useCallback(
+    (body: string, localMedia?: { type: "image" | "video" | "audio"; url: string } | null): string => {
+      const tempId = `temp-${Date.now()}`;
+      const msg: ThreadMessage = {
+        id: tempId,
+        _tempId: tempId,
+        conversation_id: conversationId,
+        direction: "out",
+        body,
+        media: localMedia ? [{ type: localMedia.type, payload: { url: localMedia.url } }] : null,
+        channel_message_id: null,
+        status: "sent",
+        sent_at: new Date().toISOString(),
+        _local: "sending",
+      };
+      pending.current = [...pending.current, msg];
+      setMessages((m) => [...m, msg]);
+      return tempId;
+    },
+    [conversationId],
+  );
 
   /** Reconcile an optimistic bubble after the send-message call resolves. */
   const reconcile = useCallback((tempId: string, state: LocalState) => {

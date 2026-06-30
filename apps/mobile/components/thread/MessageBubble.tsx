@@ -76,6 +76,19 @@ export function MessageBubble({
                     </Pressable>
                   );
                 }
+                if (m.type === "audio") {
+                  return (
+                    <View key={i} className={`flex-row items-center rounded-pill px-3.5 ${out ? "bg-accent-strong" : "border border-line bg-surface"}`} style={{ gap: 9, height: 44, minWidth: 150 }}>
+                      <Icon name="mic" size={17} color={out ? "#fff" : colors.ink2} />
+                      <View className="flex-row items-center" style={{ gap: 3 }}>
+                        {[6, 12, 8, 14, 9, 5].map((h, k) => (
+                          <View key={k} style={{ width: 3, height: h, borderRadius: 2, backgroundColor: out ? "rgba(255,255,255,0.7)" : colors.ink4 }} />
+                        ))}
+                      </View>
+                      <Text style={{ fontSize: 12.5, color: out ? "rgba(255,255,255,0.85)" : colors.ink3 }}>Voice</Text>
+                    </View>
+                  );
+                }
                 return (
                   <View key={i} className="flex-row items-center rounded-control bg-surface-2 px-3 py-2" style={{ gap: 7 }}>
                     <Icon name="ext" size={15} color={colors.ink3} />

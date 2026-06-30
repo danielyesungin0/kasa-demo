@@ -25,14 +25,20 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return jsonResponse({ error: "method_not_allowed" }, 405);
 
-  let body: { conversation_id?: string; text?: string };
+  let body: {
+    conversation_id?: string;
+    text?: string;
+    media?: { type: "image" | "video" | "audio"; url: string } | null;
+  };
   try {
     body = await req.json();
   } catch {
     return jsonResponse({ error: "invalid_json" }, 400);
   }
   const text = (body.text ?? "").trim();
-  if (!body.conversation_id || !text) {
+  const media = body.media && body.media.url ? body.media : null;
+  // Must have at least text OR a media attachment.
+  if (!body.conversation_id || (!text && !media)) {
     return jsonResponse({ error: "missing_required_fields" }, 400);
   }
 
@@ -66,7 +72,9 @@ Deno.serve(async (req) => {
     .insert({
       conversation_id: convo.id,
       direction: "out",
-      body: text,
+      body: text || null,
+      // Store the same shape inbound media uses so the bubble renders it.
+      media: media ? [{ type: media.type, payload: { url: media.url } }] : null,
       status: "sent",
       sent_at: new Date().toISOString(),
     })
@@ -80,7 +88,7 @@ Deno.serve(async (req) => {
   // ── Dispatch via the channel API ──
   let sendResult: { ok: boolean; providerId?: string; error?: string };
   if (convo.channel_type === "instagram") {
-    sendResult = await sendInstagram(admin, convo, text);
+    sendResult = await sendInstagram(admin, convo, text, media);
   } else {
     // WeChat/SMS/Kakao not yet wired — mark sent locally (no provider) so the
     // app still works for those channels in dev; real sends are later chunks.
@@ -113,7 +121,12 @@ Deno.serve(async (req) => {
 // it (multi-tenant correct), falling back to a global env token if present.
 // recipient.id is the IG-scoped user id stored as conversation.external_thread_id.
 // deno-lint-ignore no-explicit-any
-async function sendInstagram(admin: any, convo: any, text: string): Promise<{ ok: boolean; providerId?: string; error?: string }> {
+async function sendInstagram(
+  admin: any,
+  convo: any,
+  text: string,
+  media: { type: "image" | "video" | "audio"; url: string } | null,
+): Promise<{ ok: boolean; providerId?: string; error?: string }> {
   const recipientId = convo.external_thread_id;
   if (!recipientId) return { ok: false, error: "no_recipient" };
 
@@ -135,29 +148,41 @@ async function sendInstagram(admin: any, convo: any, text: string): Promise<{ ok
   }
   if (!igToken) return { ok: false, error: "meta_not_configured" };
 
-  try {
-    const res = await fetch(
-      `https://graph.instagram.com/v21.0/me/messages?access_token=${encodeURIComponent(igToken)}`,
-      {
+  const url = `https://graph.instagram.com/v21.0/me/messages?access_token=${encodeURIComponent(igToken)}`;
+  // IG sends text and attachment as SEPARATE messages. Send the attachment
+  // first (the substance), then any caption text. The provider id we return is
+  // the attachment's if present, else the text's.
+  async function post(message: unknown): Promise<{ ok: boolean; providerId?: string; error?: string }> {
+    try {
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          recipient: { id: recipientId },
-          message: { text },
-        }),
-      },
-    );
-    const data = await res.json();
-    if (!res.ok) {
-      // Surface the error code/subcode only (no token). Common: #10 outside
-      // the 24h window (we already gate on window, but Meta is authoritative).
-      const code = data?.error?.code ?? "unknown";
-      console.error("[send] Instagram send failed", res.status, code);
-      return { ok: false, error: `meta_${code}` };
+        body: JSON.stringify({ recipient: { id: recipientId }, message }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const code = data?.error?.code ?? "unknown";
+        console.error("[send] Instagram send failed", res.status, code);
+        return { ok: false, error: `meta_${code}` };
+      }
+      return { ok: true, providerId: data.message_id };
+    } catch (e) {
+      console.error("[send] Instagram send threw", (e as Error).name);
+      return { ok: false, error: "meta_unreachable" };
     }
-    return { ok: true, providerId: data.message_id };
-  } catch (e) {
-    console.error("[send] Instagram send threw", (e as Error).name);
-    return { ok: false, error: "meta_unreachable" };
   }
+
+  let providerId: string | undefined;
+  if (media) {
+    // IG attachment types: image | video | audio (file not supported on IG).
+    const r = await post({ attachment: { type: media.type, payload: { url: media.url } } });
+    if (!r.ok) return r;
+    providerId = r.providerId;
+  }
+  if (text) {
+    const r = await post({ text });
+    if (!r.ok) return r;
+    providerId = providerId ?? r.providerId;
+  }
+  return { ok: true, providerId };
 }

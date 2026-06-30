@@ -19,9 +19,12 @@ import { Composer } from "@/components/thread/Composer";
 import { MessageBubble } from "@/components/thread/MessageBubble";
 import { ImageViewer } from "@/components/ui/ImageViewer";
 import { BookingNudge, shouldShowNudge } from "@/components/thread/BookingNudge";
+import * as ImagePicker from "expo-image-picker";
 import { useThread, type ThreadMessage } from "@/lib/useThread";
 import { takePendingBooking } from "@/lib/bookingResult";
+import { uploadMedia } from "@/lib/uploadMedia";
 import { useToast } from "@/components/ui/Toast";
+import { VoiceRecorder } from "@/components/thread/VoiceRecorder";
 import { channelState } from "@/lib/channelState";
 import { sendMessage } from "@/lib/sendMessage";
 import { channels } from "@/theme/colors";
@@ -35,6 +38,7 @@ export default function ThreadScreen() {
   const listRef = useRef<FlatList>(null);
   const [viewerUrl, setViewerUrl] = useState<string | null>(null);
   const [seededDraft, setSeededDraft] = useState<string | null>(null);
+  const [recording, setRecording] = useState(false);
   // Measure the real header height so KeyboardAvoidingView's offset is exact
   // (a hardcoded guess left a gap between the keyboard and the input).
 
@@ -80,6 +84,42 @@ export default function ThreadScreen() {
     } else {
       reconcile(tempId, "failed");
     }
+  }
+
+  // Send a picked/recorded media file: show it instantly (local uri), upload to
+  // Storage, then send the public URL. If upload/send fails, mark failed.
+  async function sendMedia(localUri: string, type: "image" | "video" | "audio") {
+    const tempId = appendOptimistic("", { type, url: localUri });
+    scrollToEnd();
+    const url = await uploadMedia(localUri, type);
+    if (!url) { reconcile(tempId, "failed"); return; }
+    const result = await sendMessage(id, "", { type, url });
+    if (result.ok) reconcile(tempId, "sent");
+    else if (result.blocked) {
+      dropOptimistic(tempId);
+      const label = result.channel ? channels[result.channel as keyof typeof channels].label : "the channel";
+      setWindowBanner(`Reply window closed — open ${label} to continue.`);
+    } else reconcile(tempId, "failed");
+  }
+
+  // Composer media actions: camera, photo library, voice memo.
+  async function handleAttach(kind: "camera" | "photo" | "voice") {
+    if (kind === "voice") { setRecording(true); return; }
+    const fromCamera = kind === "camera";
+    const perm = fromCamera
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      toast.show(fromCamera ? "Camera access is off" : "Photo access is off", { icon: "alert", tone: "info" });
+      return;
+    }
+    const result = fromCamera
+      ? await ImagePicker.launchCameraAsync({ mediaTypes: ["images", "videos"], quality: 0.8 })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images", "videos"], quality: 0.8 });
+    if (result.canceled || !result.assets?.length) return;
+    const asset = result.assets[0];
+    const type: "image" | "video" = asset.type === "video" ? "video" : "image";
+    void sendMedia(asset.uri, type);
   }
 
   function retry(msg: ThreadMessage) {
@@ -212,11 +252,16 @@ export default function ThreadScreen() {
           onSend={doSend}
           onBook={() => router.push(`/book?conversation=${id}`)} // → Book sheet
           onOpenExternal={openExternal}
-          onAttach={() => toast.show("Sending media is coming soon", { icon: "image", tone: "info" })}
+          onAttach={handleAttach}
           initialDraft={seededDraft}
         />
       </View>
       <ImageViewer url={viewerUrl} onClose={() => setViewerUrl(null)} />
+      <VoiceRecorder
+        visible={recording}
+        onCancel={() => setRecording(false)}
+        onSend={(uri) => { setRecording(false); void sendMedia(uri, "audio"); }}
+      />
     </KeyboardAvoidingView>
   );
 }

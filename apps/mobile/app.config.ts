@@ -16,10 +16,28 @@ const baseConfig: ExpoConfig = {
   version: "0.1.0",
   orientation: "portrait",
   userInterfaceStyle: "light",
-  ios: { supportsTablet: false, bundleIdentifier: "com.danielyesung.kasa" },
+  ios: {
+    supportsTablet: false,
+    bundleIdentifier: "com.danielyesung.kasa",
+    infoPlist: {
+      NSMicrophoneUsageDescription: "Kasa needs access to your microphone so you can send voice messages to clients.",
+    },
+  },
   android: { package: "com.danielyesung.kasa" },
   web: { bundler: "metro", output: "single" },
-  plugins: ["expo-router", "expo-font", "expo-video"],
+  plugins: [
+    "expo-router",
+    "expo-font",
+    "expo-video",
+    "expo-audio",
+    [
+      "expo-image-picker",
+      {
+        photosPermission: "Kasa needs access to your photos so you can send images to clients.",
+        cameraPermission: "Kasa needs access to your camera so you can take and send photos to clients.",
+      },
+    ],
+  ],
   experiments: { typedRoutes: true },
   extra: {
     supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? "",
