@@ -7,15 +7,22 @@ import { Text } from "@/components/ui/Text";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { SearchBar } from "@/components/ui/SearchBar";
 import { InboxRow } from "@/components/inbox/InboxRow";
+import { ActionSheet, type SheetAction } from "@/components/ui/ActionSheet";
 import { useConversations } from "@/lib/useConversations";
 import { supabase } from "@/lib/supabase";
-import { colors } from "@/theme/colors";
+import { colors, channels } from "@/theme/colors";
 import type { InboxItem } from "@/lib/types";
+
+const channelLabel = (c: InboxItem["channel_type"]) =>
+  channels[c as keyof typeof channels]?.label ?? c;
 
 const FILTERS = [
   { key: "all", label: "All" },
   { key: "unread", label: "Unread" },
-  { key: "booked", label: "Booked" },
+  // "Booking requests" = threads the AI flagged as a booking inquiry (the
+  // hasBooking / intent==="booking" signal). Renamed from "Booked", which read
+  // like "has a confirmed appointment" — this is a lead, not a confirmation.
+  { key: "booking", label: "Booking requests" },
 ] as const;
 type FilterKey = (typeof FILTERS)[number]["key"];
 
@@ -26,14 +33,23 @@ export default function InboxScreen() {
   const router = useRouter();
   const { items, loading, reload } = useConversations();
   const [filter, setFilter] = useState<FilterKey>("all");
+  const [channel, setChannel] = useState<"all" | InboxItem["channel_type"]>("all");
+  const [channelMenu, setChannelMenu] = useState(false);
   const [query, setQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   async function onRefresh() { setRefreshing(true); await reload(); setRefreshing(false); }
 
+  // Channels actually present in the inbox (so the filter only offers real ones).
+  const presentChannels = useMemo(
+    () => Array.from(new Set(items.map((i) => i.channel_type))),
+    [items],
+  );
+
   const list = useMemo(() => {
     let l = items;
     if (filter === "unread") l = l.filter((i) => i.unread);
-    else if (filter === "booked") l = l.filter((i) => i.hasBooking);
+    else if (filter === "booking") l = l.filter((i) => i.hasBooking);
+    if (channel !== "all") l = l.filter((i) => i.channel_type === channel);
     const q = query.trim().toLowerCase();
     if (q) {
       l = l.filter(
@@ -43,7 +59,7 @@ export default function InboxScreen() {
       );
     }
     return l;
-  }, [items, filter, query]);
+  }, [items, filter, channel, query]);
 
   async function markRead(item: InboxItem) {
     await supabase.from("conversations").update({ unread: false }).eq("id", item.id);
@@ -61,8 +77,25 @@ export default function InboxScreen() {
     <View className="flex-1 bg-bg" style={{ paddingTop: insets.top }}>
       {/* header */}
       <View className="px-gutter pb-2.5 pt-3">
-        <View className="mb-3" style={{ minHeight: 40, justifyContent: "center" }}>
+        <View className="mb-3 flex-row items-center justify-between" style={{ minHeight: 40 }}>
           <Text variant="title">Inbox</Text>
+          {/* channel filter — only shown once there's more than one channel to
+              filter by (e.g. after WeChat connects). With one channel it'd be a
+              no-op control, so we hide it until it's useful. */}
+          {presentChannels.length > 1 ? (
+            <Pressable
+              onPress={() => setChannelMenu(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Filter by channel"
+              className={`flex-row items-center rounded-pill border px-3 ${channel !== "all" ? "border-ink bg-ink" : "border-line-2 bg-surface"}`}
+              style={{ minHeight: 36, gap: 6 }}
+            >
+              <Icon name="merge" size={14} color={channel !== "all" ? "#fff" : colors.ink3} />
+              <Text style={{ fontSize: 13, fontFamily: "Inter_600SemiBold", color: channel !== "all" ? "#fff" : colors.ink2 }}>
+                {channel === "all" ? "Channel" : channelLabel(channel)}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
 
         {/* search — filters by client name or message text */}
@@ -135,6 +168,20 @@ export default function InboxScreen() {
           )}
         />
       )}
+
+      <ActionSheet
+        visible={channelMenu}
+        title="Filter by channel"
+        onClose={() => setChannelMenu(false)}
+        actions={[
+          { label: "All channels", icon: "inbox", onPress: () => setChannel("all") },
+          ...presentChannels.map((c): SheetAction => ({
+            label: channelLabel(c),
+            icon: "merge",
+            onPress: () => setChannel(c),
+          })),
+        ]}
+      />
     </View>
   );
 }
