@@ -266,5 +266,255 @@ upload" / "provider didn't accept this"), never a silent fail.
 - `apps/mobile/components/thread/MessageBubble.tsx` — bubbles, media, states
 - `apps/mobile/components/ui/TypingDots.tsx` — animated sending dots
 - `apps/mobile/lib/cache.ts` — stale-while-revalidate cache
+
+---
+---
+
+# PART 2 — The composer UI micro-interactions (the "amazing" feel)
+
+This is the detail that makes it feel premium: buttons living *inside* the input
+pill, animating away as you type, the send button appearing. Plus the exact
+keyboard-covers-input fix. **Wrap all of this in your own design system** (colors,
+radii, fonts) — the values below are behavior, not brand.
+
+## The composer anatomy
+A single rounded "pill" bar containing, left→right:
 ```
+[ primary action ]  [ ───── text input (flex) ───── ]  [ contextual right slot ]
+   (always shown)                                        empty → media icons
+                                                         typing → Send button
 ```
+- **Left primary action** (optional): a persistent circular button — in Kasa it
+  was "Book". Stays put in every state. Anchors the bar.
+- **Text input**: `flex: 1`, `multiline`, `maxHeight ~96px` (grows a few lines
+  then scrolls). Vertically centered.
+- **Right slot**: this is where the magic is — it swaps based on whether there's
+  text.
+
+## The swap: media icons ⇄ send button
+- **Empty input** → show 1–3 quick media icons (camera, photo).
+- **Has text** (`text.trim().length > 0`) → icons disappear, a filled **Send**
+  button appears.
+
+Kasa shipped this as an **instant conditional swap**. To make it *animated*
+(the polished version you want), animate opacity+width/scale on the right slot.
+
+### Animated version (React Native, Reanimated or Animated)
+```tsx
+const hasText = text.trim().length > 0;
+const t = useRef(new Animated.Value(0)).current; // 0 = empty, 1 = typing
+
+useEffect(() => {
+  Animated.timing(t, {
+    toValue: hasText ? 1 : 0,
+    duration: 160,
+    easing: Easing.out(Easing.cubic),
+    useNativeDriver: true,
+  }).start();
+}, [hasText]);
+
+// Right slot: cross-fade + slight scale between the two clusters.
+<View style={{ width: 44, height: 40 }}>
+  {/* media icons — visible when empty */}
+  <Animated.View style={{
+    position: "absolute", inset: 0, flexDirection: "row",
+    opacity: t.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
+    transform: [{ scale: t.interpolate({ inputRange: [0,1], outputRange: [1, 0.8] }) }],
+  }} pointerEvents={hasText ? "none" : "auto"}>
+    <IconButton icon="camera" onPress={() => onAttach("camera")} />
+    <IconButton icon="image"  onPress={() => onAttach("photo")} />
+  </Animated.View>
+
+  {/* send — visible when typing */}
+  <Animated.View style={{
+    position: "absolute", inset: 0, alignItems: "flex-end", justifyContent: "center",
+    opacity: t,
+    transform: [{ scale: t.interpolate({ inputRange: [0,1], outputRange: [0.8, 1] }) }],
+  }} pointerEvents={hasText ? "auto" : "none"}>
+    <Pressable onPress={handleSend}
+      style={{ width: 40, height: 40, borderRadius: 20, /* your accent */ }}>
+      <Icon name="send" />
+    </Pressable>
+  </Animated.View>
+</View>
+```
+Notes that make it feel right:
+- **Both clusters are absolutely positioned in a fixed-size box** so nothing
+  jumps/reflows during the cross-fade — they occupy the same slot.
+- `pointerEvents` flips with state so you never tap the invisible one.
+- Keep it fast (**~150–180ms, ease-out**). Longer feels sluggish.
+- The left primary action does NOT move — only the right slot animates.
+
+### Web version (Framer Motion / CSS)
+Same idea: fixed-width right slot, cross-fade the two children.
+```tsx
+<div className="relative h-10 w-11">
+  <div className={`absolute inset-0 flex transition-all duration-150
+       ${hasText ? "scale-90 opacity-0 pointer-events-none" : "opacity-100"}`}>
+    …media icons…
+  </div>
+  <div className={`absolute inset-0 flex justify-end items-center transition-all duration-150
+       ${hasText ? "opacity-100" : "scale-90 opacity-0 pointer-events-none"}`}>
+    <button onClick={handleSend}>send</button>
+  </div>
+</div>
+```
+CSS-only alt: the send button can scale from 0→1 via
+`transform: scale()` + `transition` keyed on an `is-typing` class.
+
+## Send button behavior
+- Only active when `text.trim()` is non-empty (disable/hide otherwise).
+- On tap: **clear the input synchronously first**, THEN fire send (so the field
+  empties instantly and the optimistic bubble takes over). Never `await` before
+  clearing.
+- After send, the right slot animates back to media icons (because text is now "").
+
+## Input growth + reset
+- `multiline`, `maxHeight` ~96px, `paddingVertical` ~9. It grows with content,
+  scrolls past the cap.
+- On send, setting text to `""` collapses it back to one line automatically.
+
+---
+
+# PART 3 — Fix: "the keyboard covers the input" (the exact recipe)
+
+This is the bug you're still hitting. There are **three** independent causes;
+you usually have to fix all three.
+
+### Cause 1 — no keyboard avoidance at all
+Wrap the WHOLE screen (header + list + composer) in `KeyboardAvoidingView`:
+```tsx
+<KeyboardAvoidingView
+  style={{ flex: 1, paddingTop: insets.top }}
+  behavior={Platform.OS === "ios" ? "padding" : "height"}
+  keyboardVerticalOffset={0}
+>
+  {header}
+  <View style={{ flex: 1 }}>{messageList}</View>
+  {composer}
+</KeyboardAvoidingView>
+```
+- **iOS uses `padding`, Android uses `height`.** Using the wrong one per-platform
+  is the most common reason it "doesn't work."
+- `keyboardVerticalOffset` must account for anything ABOVE the KAV. If your KAV
+  starts at the top of the screen (as above, with `paddingTop: insets.top`
+  inside), offset is `0`. If you have a nav bar the KAV sits *below*, set the
+  offset to that bar's height — a wrong offset leaves a gap OR still covers it.
+
+### Cause 2 — the double safe-area gap (looks like "covered" or "floating")
+When the keyboard is UP, it already covers the home-indicator area. If the
+composer keeps its safe-area bottom padding, you get a visible gap between the
+keyboard and the input. Fix: **drop the bottom inset while the keyboard is up.**
+```tsx
+const [kbUp, setKbUp] = useState(false);
+useEffect(() => {
+  const show = Keyboard.addListener("keyboardWillShow", () => setKbUp(true));
+  const hide = Keyboard.addListener("keyboardWillHide", () => setKbUp(false));
+  return () => { show.remove(); hide.remove(); };
+}, []);
+// composer bottom padding:
+paddingBottom: kbUp ? 8 : Math.max(12, insets.bottom)
+```
+(Use `keyboardWillShow/Hide` on iOS for a smooth sync with the keyboard
+animation; `keyboardDidShow/Hide` on Android which lacks the "will" events.)
+
+### Cause 3 — a parent ScrollView / wrong flex swallowing the resize
+- The message list must be `flex: 1` and the composer a fixed sibling BELOW it,
+  both inside the KAV. If the composer is `position:absolute` or outside the KAV,
+  it won't ride up.
+- Don't nest the whole thing in a `ScrollView` — the list is the scroller.
+- On Android also set, in `app.json`:
+  `"android": { "softwareKeyboardLayoutMode": "pan" }` (Expo) — or ensure
+  `windowSoftInputMode` is `adjustResize`. Wrong mode = keyboard overlaps.
+
+### Web equivalent (if this is a web chat)
+`KeyboardAvoidingView` is RN-only. On web:
+- Use `100dvh` (dynamic viewport height) not `100vh` for the chat container so it
+  shrinks when the mobile keyboard opens.
+- Or listen to `visualViewport` resize and set the composer's bottom to
+  `window.innerHeight - visualViewport.height`.
+- Keep the composer `position: sticky; bottom: 0` inside a flex column where the
+  message list is `flex: 1; overflow-y: auto`.
+
+### Verify the fix
+Open the thread, focus the input: the input should sit **flush on top of the
+keyboard**, the last message visible above it, no gap, no overlap. Type multiple
+lines — it grows without being covered.
+
+---
+
+# PART 4 — The bubble meta line (sending / sent / failed)
+Under each outgoing bubble, ONE line that swaps by state:
+- `sending` → "Sending" + animated dots (PART: TypingDots)
+- `sent`    → the timestamp (12h)
+- `failed`  → "Failed — tap to retry" in the error color, the whole row tappable
+
+```tsx
+{failed ? (
+  <Pressable onPress={() => onRetry(msg)} className="row">
+    <Icon name="alert" /> <Text>Failed — tap to retry</Text>
+  </Pressable>
+) : sending ? (
+  <View className="row"><Text>Sending</Text><TypingDots /></View>
+) : (
+  <Text>{time12h(msg.sent_at)}</Text>
+)}
+```
+
+## TypingDots (animated "sending", reduce-motion aware) — full component
+```tsx
+export function TypingDots({ color, size = 4 }: { color: string; size?: number }) {
+  const dots = [useRef(new Animated.Value(0.3)).current,
+                useRef(new Animated.Value(0.3)).current,
+                useRef(new Animated.Value(0.3)).current];
+  useEffect(() => {
+    let reduce = false, cancelled = false;
+    AccessibilityInfo.isReduceMotionEnabled().then(r => { reduce = r; });
+    const loops = dots.map((d, i) => Animated.loop(Animated.sequence([
+      Animated.delay(i * 150),
+      Animated.timing(d, { toValue: 1, duration: 300, useNativeDriver: true }),
+      Animated.timing(d, { toValue: 0.3, duration: 300, useNativeDriver: true }),
+      Animated.delay((2 - i) * 150),
+    ])));
+    if (!reduce) loops.forEach(l => !cancelled && l.start());
+    return () => { cancelled = true; loops.forEach(l => l.stop()); };
+  }, []);
+  return (
+    <View style={{ flexDirection: "row", gap: size - 1 }}>
+      {dots.map((d, i) => (
+        <Animated.View key={i} style={{ width: size, height: size,
+          borderRadius: size / 2, backgroundColor: color, opacity: d }} />
+      ))}
+    </View>
+  );
+}
+```
+
+---
+
+# PART 5 — Wrapping it in a design system
+Everything above is **behavior**. Skin it with tokens so it matches the app:
+- Bubbles: outgoing = your accent fill + white text; incoming = surface +
+  hairline border + ink text. Radius ~20, with one corner tightened
+  (`borderBottomRightRadius: 6` on outgoing) for the "tail" look.
+- Composer pill: `bg` fill, `border` hairline, radius ~24, the input transparent.
+- Buttons: primary action = soft-tinted circle; send = accent-strong circle;
+  icons ~18–21px. All ≥40pt touch targets.
+- Spacing: 16 padding on the list, 1.5–2 between bubbles, generous line-height.
+- Timestamps/meta in ink-4 at ~10.5px.
+Keep the *values* from the target app's design system; keep the *interactions*
+from this guide.
+
+## Full port checklist (UI additions)
+- [ ] Left primary action pinned; never moves
+- [ ] Right slot: media icons ⇄ Send, cross-faded in a FIXED-size box (no reflow)
+- [ ] Animate the swap ~150ms ease-out; flip pointerEvents with state
+- [ ] Clear input synchronously before firing send
+- [ ] Multiline input, maxHeight cap, grows then scrolls, resets on send
+- [ ] KeyboardAvoidingView: padding(iOS)/height(Android), correct offset
+- [ ] Drop composer bottom inset while keyboard is up (keyboardWillShow/Hide)
+- [ ] Android adjustResize / softwareKeyboardLayoutMode: pan
+- [ ] (web) 100dvh + visualViewport handling, sticky composer
+- [ ] Meta line swaps sending(dots)/sent(time)/failed(retry)
+- [ ] Reduce-motion aware animations
+
